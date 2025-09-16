@@ -7,7 +7,7 @@ class SplashPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.deepPurple,
+      backgroundColor: Theme.of(context).colorScheme.primary,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -30,7 +30,7 @@ class SplashPage extends StatelessWidget {
               child: const Icon(
                 Icons.business,
                 size: 64,
-                color: Colors.deepPurple,
+                //color: Colors.deepPurple,
               ),
             ),
             const SizedBox(height: 32),

@@ -5,7 +5,11 @@ import '../bloc/auth/auth_event.dart';
 import '../bloc/auth/auth_state.dart';
 import '../bloc/partner_bloc.dart';
 import '../bloc/partner_event.dart';
+import '../bloc/employee/employee_bloc.dart';
+import '../bloc/employee/employee_event.dart';
 import '../widgets/partners_list.dart';
+import '../widgets/employees_list.dart';
+import '../widgets/sale_orders_list.dart';
 
 /// Página principal de la aplicación
 class HomePage extends StatefulWidget {
@@ -15,22 +19,21 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   String _currentFilter = 'all';
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    // Cargar partners al iniciar
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PartnerBloc>().add(LoadPartners());
-    });
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -38,8 +41,25 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Odoo Partners'),
+        title: const Text('SalesMate'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+           /* Tab(
+              icon: Icon(Icons.business),
+              text: 'Partners',
+            ),*/
+            Tab(
+              icon: Icon(Icons.people),
+              text: 'Empleados',
+            ),
+            Tab(
+              icon: Icon(Icons.shopping_cart),
+              text: 'Pedidos',
+            ),
+          ],
+        ),
         actions: [
           // Botón de búsqueda
           IconButton(
@@ -177,10 +197,24 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: const PartnersListWidget(),
+      body: TabBarView(
+        controller: _tabController,
+        children: const [
+         /* PartnersListWidget(),*/
+          EmployeesList(),
+          SaleOrdersList(),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _showCreatePartnerDialog,
-        tooltip: 'Crear Partner',
+        onPressed: () {
+          final currentIndex = _tabController.index;
+          if (currentIndex == 0) {
+            _showCreatePartnerDialog();
+          } else {
+            _showCreateEmployeeDialog();
+          }
+        },
+        tooltip: _tabController.index == 0 ? 'Crear Partner' : 'Crear Empleado',
         child: const Icon(Icons.add),
       ),
     );
@@ -373,21 +407,38 @@ class _HomePageState extends State<HomePage> {
   void _showLogoutConfirmation(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Cerrar Sesión'),
         content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Cancelar'),
           ),
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();
+              Navigator.of(dialogContext).pop();
               context.read<AuthBloc>().add(LogoutRequested());
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Cerrar Sesión'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Muestra el diálogo para crear un nuevo empleado
+  void _showCreateEmployeeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Crear Empleado'),
+        content: const Text('Funcionalidad de crear empleado próximamente...'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
           ),
         ],
       ),

@@ -3,7 +3,7 @@ import '../constants/app_constants.dart';
 /// Configuración específica para Odoo
 class OdooConfig {
   /// URL del servidor Odoo
-  static const String serverURL = AppConstants.odooServerURL;
+  static String get serverURL => AppConstants.odooServerURL;
   
   /// Nombre de la base de datos
   static const String databaseName = AppConstants.odooDbName;

@@ -35,9 +35,10 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
-  # Odoo Repository (incluye RPC Client)
+  # Odoo
+  odoo_rpc: ^0.7.1
   odoo_repository: ^0.6.0
-  
+
   # State Management
   flutter_bloc: ^8.1.3
   
@@ -52,7 +53,7 @@ dependencies:
   
   # Equatable para comparaciones
   equatable: ^2.0.5
-  odoo_rpc: ^0.7.1
+  flex_color_scheme: ^8.2.0
 
 dev_dependencies:
   flutter_test:

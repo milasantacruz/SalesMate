@@ -5,13 +5,21 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'core/cache/custom_odoo_kv.dart';
 import 'core/di/injection_container.dart';
 import 'data/repositories/partner_repository.dart';
+import 'data/repositories/employee_repository.dart';
+import 'data/repositories/sale_order_repository.dart';
 import 'presentation/bloc/auth/auth_bloc.dart';
 import 'presentation/bloc/auth/auth_event.dart';
 import 'presentation/bloc/auth/auth_state.dart';
 import 'presentation/bloc/partner_bloc.dart';
+import 'presentation/bloc/partner_event.dart';
+import 'presentation/bloc/employee/employee_bloc.dart';
+import 'presentation/bloc/employee/employee_event.dart';
+import 'presentation/bloc/sale_order/sale_order_bloc.dart';
+import 'presentation/bloc/sale_order/sale_order_event.dart';
 import 'presentation/pages/home_page.dart';
 import 'presentation/pages/login_page.dart';
 import 'presentation/pages/splash_page.dart';
+import "presentation/theme.dart";
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,23 +45,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Odoo Test App',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 2,
-        ),
-        cardTheme: const CardThemeData(
-          elevation: 2,
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          elevation: 4,
-        ),
-      ),
+      theme: AppTheme.light,
+      //darkTheme: AppTheme.dark,
       home: BlocProvider(
         create: (context) => AuthBloc()..add(CheckAuthStatus()),
         child: const AuthWrapper(),
@@ -73,14 +66,28 @@ class AuthWrapper extends StatelessWidget {
         if (state is AuthLoading) {
           return const SplashPage();
         } else if (state is AuthAuthenticated) {
-          // Solo crear PartnerBloc si estamos autenticados y tenemos el repository
+          // Crear múltiples BLoCs si estamos autenticados y tenemos los repositories
           try {
-            return BlocProvider(
-              create: (context) => PartnerBloc(getIt<PartnerRepository>()),
+            return MultiBlocProvider(
+              providers: [
+                BlocProvider(
+                  create: (context) => PartnerBloc(getIt<PartnerRepository>())
+                    ..add(LoadPartners()),
+                ),
+                BlocProvider(
+                  create: (context) => EmployeeBloc(getIt<EmployeeRepository>())
+                    ..add(LoadEmployees()),
+                ),
+                BlocProvider(
+                  create: (context) =>
+                      SaleOrderBloc(getIt<SaleOrderRepository>())
+                        ..add(LoadSaleOrders()),
+                ),
+              ],
               child: const HomePage(),
             );
           } catch (e) {
-            // Si no se puede obtener el repository, mostrar error
+            // Si no se puede obtener los repositories, mostrar error
             return LoginPage(errorMessage: 'Error configurando la aplicación: $e');
           }
         } else if (state is AuthError) {

@@ -41,9 +41,9 @@ class Partner extends Equatable implements OdooRecord {
   static Partner fromJson(Map<String, dynamic> json) {
     return Partner(
       id: json['id'] as int,
-      name: json['name'] as String,
-      email: json['email'] as String?,
-      phone: json['phone'] as String?,
+      name: json['name'] is String ? json['name'] : '',
+      email: json['email'] is String ? json['email'] : null,
+      phone: json['phone'] is String ? json['phone'] : null,
       isCompany: json['is_company'] as bool? ?? false,
       customerRank: json['customer_rank'] as int? ?? 0,
       supplierRank: json['supplier_rank'] as int? ?? 0,

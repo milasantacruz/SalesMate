@@ -104,11 +104,11 @@ class _LoginPageState extends State<LoginPage> {
                   const Icon(
                     Icons.business,
                     size: 64,
-                    color: Colors.deepPurple,
+                    //color: Colors.deepPurple,
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Odoo Test App',
+                    'SalesMate',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,

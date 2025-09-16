@@ -36,22 +36,32 @@ class PartnerBloc extends Bloc<PartnerEvent, PartnerState> {
 
   /// Maneja la carga inicial de partners
   Future<void> _onLoadPartners(LoadPartners event, Emitter<PartnerState> emit) async {
-    print('📋 Cargando partners...');
+    print('📋 PARTNER_BLOC: Iniciando carga de partners...');
+    print('📋 PARTNER_BLOC: Estado actual: ${state.runtimeType}');
     emit(PartnerLoading());
     
     try {
+      print('⏳ PARTNER_BLOC: Llamando _partnerRepository.loadRecords()...');
       // Disparar la carga de datos
       _partnerRepository.loadRecords();
+      print('✅ PARTNER_BLOC: loadRecords() completado');
       
       // El estado se actualizará automáticamente a través del stream
       // Si no hay datos después de un tiempo, mostrar empty
+      print('⏳ PARTNER_BLOC: Esperando 2 segundos para datos...');
       await Future.delayed(const Duration(seconds: 2));
       
+      print('📊 PARTNER_BLOC: Después de 2s - Estado: ${state.runtimeType}');
       if (state is PartnerLoading) {
+        print('⚠️ PARTNER_BLOC: Todavía en Loading - emitiendo Empty');
         emit(const PartnerEmpty(message: 'No se encontraron partners'));
+      } else {
+        print('✅ PARTNER_BLOC: Estado cambió a: ${state.runtimeType}');
       }
     } catch (e) {
-      print('❌ Error cargando partners: $e');
+      print('❌ PARTNER_BLOC: Error cargando partners: $e');
+      print('❌ PARTNER_BLOC: Error tipo: ${e.runtimeType}');
+      print('❌ PARTNER_BLOC: Stack trace: ${StackTrace.current}');
       emit(PartnerError('Error cargando partners: $e'));
     }
   }

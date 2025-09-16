@@ -1,9 +1,9 @@
 /// Constantes de la aplicación para configuración de Odoo
 class AppConstants {
   // Configuración del servidor Odoo - DATOS REALES DEL CLIENTE
-  static const String _odooServerURL = 'https://odooconsultores-mtfood-staging-22669119.dev.odoo.com';
+  static const String _odooServerURL = 'https://odooconsultores-mtfood-staging-23633807.dev.odoo.com';
   static const String _proxyServerURL = 'http://localhost:8080';
-  static const String odooDbName = 'odooconsultores-mtfood-staging-22669119';
+  static const String odooDbName = 'odooconsultores-mtfood-staging-23633807';
   
   // URL dinámica basada en configuración CORS
   static String get odooServerURL => useCorsProxy ? _proxyServerURL : _odooServerURL;
@@ -27,7 +27,8 @@ class AppConstants {
   //static String get webDatasetURL => '$odooServerURL$webDatasetEndpoint';
   
   // Configuración alternativa para CORS (si es necesario)
-  static const bool useCorsProxy = true; // Usar proxy mejorado con soporte para cookies
+  // IMPORTANTE: En Android, useCorsProxy debe ser false porque no puede acceder a localhost
+  static const bool useCorsProxy = false; // Usar servidor directo en móvil
   
   // Headers para manejar CORS y cookies
   static const Map<String, String> corsHeaders = {
