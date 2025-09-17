@@ -46,10 +46,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-           /* Tab(
+            Tab(
               icon: Icon(Icons.business),
               text: 'Partners',
-            ),*/
+            ),
             Tab(
               icon: Icon(Icons.people),
               text: 'Empleados',
@@ -200,7 +200,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       body: TabBarView(
         controller: _tabController,
         children: const [
-         /* PartnersListWidget(),*/
+          PartnersListWidget(),
           EmployeesList(),
           SaleOrdersList(),
         ],

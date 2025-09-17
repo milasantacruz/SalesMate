@@ -1,43 +1,37 @@
 import 'package:odoo_repository/odoo_repository.dart';
-import 'package:odoo_rpc/odoo_rpc.dart';
 import '../models/employee_model.dart';
+import 'offline_odoo_repository.dart';
+import '../../core/network/network_connectivity.dart';
 
-/// Repository para manejar operaciones con Employees en Odoo
-class EmployeeRepository {
-  final OdooEnvironment env;
-  List<Employee> latestRecords = [];
-
+/// Repository para manejar operaciones con Employees en Odoo con soporte offline
+class EmployeeRepository extends OfflineOdooRepository<Employee> {
   final String modelName = 'hr.employee';
-  List<String> get oFields => Employee.oFields;
   List<dynamic> get oDomain => [['active', '=', true]];
 
-  EmployeeRepository(this.env);
+  EmployeeRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
+      : super(env, netConn, cache);
 
-  Future<void> fetchRecords() async {
-    try {
-      final response = await env.orpc.callKw({
-        'model': modelName,
-        'method': 'search_read',
-        'args': [],
-        'kwargs': {
-          'context': {'bin_size': true},
-          'domain': oDomain,
-          'fields': oFields,
-        },
-      });
+  @override
+  List<String> get oFields => Employee.oFields;
 
-      final records = response as List<dynamic>;
-      latestRecords =
-          records.map((json) => Employee.fromJson(json)).toList();
-    } on OdooException catch (e) {
-      // Handle Odoo specific errors, e.g. session expired
-      print('OdooException in EmployeeRepository: $e');
-      latestRecords = [];
-    } catch (e) {
-      print('Generic error in EmployeeRepository: $e');
-      latestRecords = [];
-    }
+  @override
+  Employee fromJson(Map<String, dynamic> json) => Employee.fromJson(json);
+
+  @override
+  Future<List<dynamic>> searchRead() async {
+    final response = await env.orpc.callKw({
+      'model': modelName,
+      'method': 'search_read',
+      'args': [],
+      'kwargs': {
+        'context': {'bin_size': true},
+        'domain': oDomain,
+        'fields': oFields,
+      },
+    });
+    return response as List<dynamic>;
   }
+
 
   /// Obtiene la lista actual de empleados
   List<Employee> get currentEmployees => latestRecords;
@@ -109,14 +103,14 @@ class EmployeeRepository {
     }
   }
 
-  /// Dispara la carga de records desde el servidor
+  /// Dispara la carga de records desde el servidor (con soporte offline)
   Future<void> loadRecords() async {
-    print('👥 EMPLOYEE_REPO: Iniciando loadRecords()');
+    print('👥 EMPLOYEE_REPO: Iniciando loadRecords() con soporte offline');
     print('👥 EMPLOYEE_REPO: Modelo: $modelName');
 
     try {
       print('⏳ EMPLOYEE_REPO: Llamando fetchRecords()...');
-      await fetchRecords();
+      await fetchRecords(); // Usa el método de la clase base con lógica offline
       print('✅ EMPLOYEE_REPO: fetchRecords() ejecutado');
       print('📊 EMPLOYEE_REPO: Records actuales: ${latestRecords.length}');
     } catch (e) {

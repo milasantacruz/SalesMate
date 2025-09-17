@@ -39,10 +39,14 @@ class SaleOrderBloc extends Bloc<SaleOrderEvent, SaleOrderState> {
       SearchAndFilterSaleOrders event, Emitter<SaleOrderState> emit) async {
     emit(SaleOrderLoading());
     try {
-      await _saleOrderRepository.fetchRecords(
+      // Configurar los parámetros de búsqueda
+      _saleOrderRepository.setSearchParams(
         searchTerm: event.searchTerm,
         state: event.state,
       );
+      
+      // Cargar los datos con los filtros aplicados
+      await _saleOrderRepository.loadRecords();
       final saleOrders = _saleOrderRepository.latestRecords;
       if (saleOrders.isEmpty) {
         emit(const SaleOrderEmpty(

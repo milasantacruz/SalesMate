@@ -36,7 +36,7 @@ Future<void> init() async {
     },
   );
 
-  // Odoo Environment
+  // Odoo Environment - Debe registrarse antes que OdooCallQueue
   getIt.registerLazySingleton<OdooEnvironment>(
     () {
       final client = getIt<OdooClient>();
@@ -51,6 +51,11 @@ Future<void> init() async {
       );
     },
   );
+
+  // Odoo Call Queue for offline support - TODO: Implementar cuando esté disponible
+  // getIt.registerLazySingleton<OdooCallQueue>(
+  //   () => OdooCallQueue(getIt<OdooEnvironment>()),
+  // );
 }
 
 /// Nueva función de login que acepta credenciales dinámicas
@@ -199,16 +204,48 @@ Future<void> logout() async {
     print('🚪 Iniciando proceso de logout...');
     final cache = getIt<CustomOdooKv>();
     
+    // Verificar qué hay en caché antes de limpiar
+    print('🔍 Verificando caché antes de limpiar:');
+    final sessionBefore = cache.get(AppConstants.cacheSessionKey);
+    final usernameBefore = cache.get('username');
+    final userIdBefore = cache.get('userId');
+    final databaseBefore = cache.get('database');
+    print('   - Session: ${sessionBefore != null ? "EXISTE" : "NO EXISTE"}');
+    print('   - Username: $usernameBefore');
+    print('   - UserId: $userIdBefore');
+    print('   - Database: $databaseBefore');
+    
     // Limpiar cache de autenticación
+    print('🧹 Limpiando caché...');
     await cache.delete(AppConstants.cacheSessionKey);
     await cache.delete('username');
     await cache.delete('userId');
     await cache.delete('database');
     
+    // Verificar que se limpió correctamente
+    print('🔍 Verificando caché después de limpiar:');
+    final sessionAfter = cache.get(AppConstants.cacheSessionKey);
+    final usernameAfter = cache.get('username');
+    final userIdAfter = cache.get('userId');
+    final databaseAfter = cache.get('database');
+    print('   - Session: ${sessionAfter != null ? "EXISTE" : "NO EXISTE"}');
+    print('   - Username: $usernameAfter');
+    print('   - UserId: $userIdAfter');
+    print('   - Database: $databaseAfter');
+    
     // Desregistrar dependencias que requieren autenticación
+    print('🗑️ Desregistrando dependencias...');
     if (getIt.isRegistered<PartnerRepository>()) {
       getIt.unregister<PartnerRepository>();
       print('🗑️ PartnerRepository desregistrado');
+    }
+    if (getIt.isRegistered<EmployeeRepository>()) {
+      getIt.unregister<EmployeeRepository>();
+      print('🗑️ EmployeeRepository desregistrado');
+    }
+    if (getIt.isRegistered<SaleOrderRepository>()) {
+      getIt.unregister<SaleOrderRepository>();
+      print('🗑️ SaleOrderRepository desregistrado');
     }
     if (getIt.isRegistered<OdooEnvironment>()) {
       getIt.unregister<OdooEnvironment>();
@@ -220,6 +257,7 @@ Future<void> logout() async {
     }
     
     // Recrear cliente sin sesión (limpio) usando factory
+    print('🔄 Recreando cliente limpio...');
     getIt.registerLazySingleton<OdooClient>(
       () => OdooClientFactory.create(AppConstants.odooServerURL),
     );
@@ -253,7 +291,11 @@ Future<void> _setupRepositories() async {
     }
     
     // Registrar PartnerRepository en GetIt para acceso directo
-    getIt.registerLazySingleton<PartnerRepository>(() => PartnerRepository(env));
+    getIt.registerLazySingleton<PartnerRepository>(() => PartnerRepository(
+      env,
+      getIt<NetworkConnectivity>(),
+      getIt<CustomOdooKv>(),
+    ));
     
     // Desregistrar EmployeeRepository anterior si existe
     if (getIt.isRegistered<EmployeeRepository>()) {
@@ -261,10 +303,23 @@ Future<void> _setupRepositories() async {
     }
     
     // Registrar EmployeeRepository en GetIt para acceso directo
-    getIt.registerLazySingleton<EmployeeRepository>(() => EmployeeRepository(env));
+    getIt.registerLazySingleton<EmployeeRepository>(() => EmployeeRepository(
+      env,
+      getIt<NetworkConnectivity>(),
+      getIt<CustomOdooKv>(),
+    ));
+    
+    // Desregistrar SaleOrderRepository anterior si existe
+    if (getIt.isRegistered<SaleOrderRepository>()) {
+      getIt.unregister<SaleOrderRepository>();
+    }
     
     // Registrar SaleOrderRepository
-    getIt.registerLazySingleton<SaleOrderRepository>(() => SaleOrderRepository(env));
+    getIt.registerLazySingleton<SaleOrderRepository>(() => SaleOrderRepository(
+      env,
+      getIt<NetworkConnectivity>(),
+      getIt<CustomOdooKv>(),
+    ));
     
     print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder)');
     

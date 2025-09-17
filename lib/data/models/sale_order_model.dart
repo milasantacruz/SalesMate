@@ -1,7 +1,8 @@
 import 'package:equatable/equatable.dart';
+import 'package:odoo_repository/odoo_repository.dart';
 
 /// Modelo para representar una Orden de Venta de Odoo (sale.order)
-class SaleOrder extends Equatable {
+class SaleOrder extends Equatable implements OdooRecord {
   final int id;
   final String name;
   final int? partnerId;
@@ -52,6 +53,31 @@ class SaleOrder extends Equatable {
               .toList() ??
           [],
     );
+  }
+
+  /// Convierte SaleOrder a JSON
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'partner_id': partnerId != null ? [partnerId, partnerName] : false,
+      'date_order': dateOrder,
+      'amount_total': amountTotal,
+      'state': state,
+      'order_line': orderLineIds,
+    };
+  }
+
+  /// Convierte SaleOrder a valores para Odoo (requerido por OdooRecord)
+  Map<String, dynamic> toVals() {
+    return {
+      'name': name,
+      'partner_id': partnerId,
+      'date_order': dateOrder,
+      'amount_total': amountTotal,
+      'state': state,
+      'order_line': orderLineIds,
+    };
   }
 
   /// Campos que se solicitan a Odoo
