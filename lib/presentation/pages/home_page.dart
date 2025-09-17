@@ -10,6 +10,7 @@ import '../bloc/employee/employee_event.dart';
 import '../widgets/partners_list.dart';
 import '../widgets/employees_list.dart';
 import '../widgets/sale_orders_list.dart';
+import '../widgets/products_list.dart';
 
 /// Página principal de la aplicación
 class HomePage extends StatefulWidget {
@@ -27,7 +28,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -57,6 +58,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             Tab(
               icon: Icon(Icons.shopping_cart),
               text: 'Pedidos',
+            ),
+            Tab(
+              icon: Icon(Icons.inventory_2),
+              text: 'Productos',
             ),
           ],
         ),
@@ -203,6 +208,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           PartnersListWidget(),
           EmployeesList(),
           SaleOrdersList(),
+          ProductsList(),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -210,11 +216,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           final currentIndex = _tabController.index;
           if (currentIndex == 0) {
             _showCreatePartnerDialog();
-          } else {
+          } else if (currentIndex == 1) {
             _showCreateEmployeeDialog();
+          } else if (currentIndex == 2) {
+            _showCreateSaleOrderDialog();
+          } else if (currentIndex == 3) {
+            _showCreateProductDialog();
           }
         },
-        tooltip: _tabController.index == 0 ? 'Crear Partner' : 'Crear Empleado',
+        tooltip: _getFloatingActionButtonTooltip(),
         child: const Icon(Icons.add),
       ),
     );
@@ -443,5 +453,56 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  /// Muestra el diálogo para crear una nueva orden de venta
+  void _showCreateSaleOrderDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Crear Orden de Venta'),
+        content: const Text('Funcionalidad de crear orden de venta próximamente...'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Muestra el diálogo para crear un nuevo producto
+  void _showCreateProductDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Crear Producto'),
+        content: const Text('Funcionalidad de crear producto próximamente...'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Obtiene el tooltip del botón flotante según la pestaña activa
+  String _getFloatingActionButtonTooltip() {
+    final currentIndex = _tabController.index;
+    switch (currentIndex) {
+      case 0:
+        return 'Crear Partner';
+      case 1:
+        return 'Crear Empleado';
+      case 2:
+        return 'Crear Orden de Venta';
+      case 3:
+        return 'Crear Producto';
+      default:
+        return 'Crear';
+    }
   }
 }

@@ -12,6 +12,7 @@ import '../http/odoo_client_factory.dart';
 import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
+import '../../data/repositories/product_repository.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -321,7 +322,19 @@ Future<void> _setupRepositories() async {
       getIt<CustomOdooKv>(),
     ));
     
-    print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder)');
+    // Desregistrar ProductRepository anterior si existe
+    if (getIt.isRegistered<ProductRepository>()) {
+      getIt.unregister<ProductRepository>();
+    }
+    
+    // Registrar ProductRepository
+    getIt.registerLazySingleton<ProductRepository>(() => ProductRepository(
+      env,
+      getIt<NetworkConnectivity>(),
+      getIt<CustomOdooKv>(),
+    ));
+    
+    print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product)');
     
     // Aquí se agregarán más repositories cuando se implementen
     // env.add(UserRepository(env));

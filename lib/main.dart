@@ -7,6 +7,7 @@ import 'core/di/injection_container.dart';
 import 'data/repositories/partner_repository.dart';
 import 'data/repositories/employee_repository.dart';
 import 'data/repositories/sale_order_repository.dart';
+import 'data/repositories/product_repository.dart';
 import 'presentation/bloc/auth/auth_bloc.dart';
 import 'presentation/bloc/auth/auth_event.dart';
 import 'presentation/bloc/auth/auth_state.dart';
@@ -16,6 +17,8 @@ import 'presentation/bloc/employee/employee_bloc.dart';
 import 'presentation/bloc/employee/employee_event.dart';
 import 'presentation/bloc/sale_order/sale_order_bloc.dart';
 import 'presentation/bloc/sale_order/sale_order_event.dart';
+import 'presentation/bloc/product/product_bloc.dart';
+import 'presentation/bloc/product/product_event.dart';
 import 'presentation/pages/home_page.dart';
 import 'presentation/pages/login_page.dart';
 import 'presentation/pages/splash_page.dart';
@@ -82,6 +85,10 @@ class AuthWrapper extends StatelessWidget {
                   create: (context) =>
                       SaleOrderBloc(getIt<SaleOrderRepository>())
                         ..add(LoadSaleOrders()),
+                ),
+                BlocProvider(
+                  create: (context) => ProductBloc(getIt<ProductRepository>())
+                    ..add(LoadProducts()),
                 ),
               ],
               child: const HomePage(),
