@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:odoo_rpc/odoo_rpc.dart';
 import '../../../core/di/injection_container.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/cache/custom_odoo_kv.dart';
@@ -27,10 +29,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final userId = cache.get('userId') ?? 'ID desconocido';
         final database = cache.get('database') ?? AppConstants.odooDbName;
         
-        print('✅ Sesión válida encontrada para: $username');
+        // Obtener la sesión desde cache y registrar en GetIt
+        final sessionJson = cache.get(AppConstants.cacheSessionKey) as String?;
+        if (sessionJson != null) {
+          final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
+          final session = OdooSession.fromJson(sessionData);
+          initAuthScope(session);
+        }
         
-        // Las dependencias ya se recrearon en checkExistingSession
-        // No necesitamos recrearlas aquí
+        print('✅ Sesión válida encontrada para: $username');
         
         emit(AuthAuthenticated(
           username: username,
@@ -65,6 +72,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final cache = getIt<CustomOdooKv>();
         final userId = cache.get('userId') ?? 'unknown';
         final database = cache.get('database') ?? AppConstants.odooDbName;
+        
+        // Obtener la sesión desde cache y registrar en GetIt
+        final sessionJson = cache.get(AppConstants.cacheSessionKey) as String?;
+        if (sessionJson != null) {
+          final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
+          final session = OdooSession.fromJson(sessionData);
+          initAuthScope(session);
+        }
         
         print('✅ Login exitoso para: ${event.username}');
         

@@ -13,6 +13,7 @@ import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/product_repository.dart';
+import '../../data/repositories/pricelist_repository.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -334,7 +335,19 @@ Future<void> _setupRepositories() async {
       getIt<CustomOdooKv>(),
     ));
     
-    print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product)');
+    // Desregistrar PricelistRepository anterior si existe
+    if (getIt.isRegistered<PricelistRepository>()) {
+      getIt.unregister<PricelistRepository>();
+    }
+    
+    // Registrar PricelistRepository
+    getIt.registerLazySingleton<PricelistRepository>(() => PricelistRepository(
+      env,
+      getIt<NetworkConnectivity>(),
+      getIt<CustomOdooKv>(),
+    ));
+    
+    print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist)');
     
     // Aquí se agregarán más repositories cuando se implementen
     // env.add(UserRepository(env));
@@ -545,5 +558,71 @@ Future<bool> _handleAuthenticateResponse(
     return false;
   }
 }
+
+/// Registra dependencias que requieren una sesión de Odoo activa.
+void initAuthScope(OdooSession session) {
+  // Primero, verificamos si ya hay una sesión registrada y la eliminamos.
+  if (getIt.isRegistered<OdooSession>()) {
+    getIt.unregister<OdooSession>();
+  }
+  // Registramos la nueva instancia de la sesión.
+  getIt.registerSingleton<OdooSession>(session);
+
+  // Re-registramos OdooEnvironment con la sesión y DB correctas.
+  if (getIt.isRegistered<OdooEnvironment>()) {
+    getIt.unregister<OdooEnvironment>();
+  }
+  getIt.registerSingleton<OdooEnvironment>(OdooEnvironment(
+    getIt<OdooClient>(),
+    session.dbName,
+    getIt<CustomOdooKv>(),
+    getIt<NetworkConnectivity>(),
+  ));
+
+  // Repositories
+  if (getIt.isRegistered<PartnerRepository>()) {
+    getIt.unregister<PartnerRepository>();
+  }
+  getIt.registerLazySingleton<PartnerRepository>(
+    () => PartnerRepository(
+        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+  );
+
+  if (getIt.isRegistered<EmployeeRepository>()) {
+    getIt.unregister<EmployeeRepository>();
+  }
+  getIt.registerLazySingleton<EmployeeRepository>(
+    () => EmployeeRepository(
+        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+  );
+
+  if (getIt.isRegistered<SaleOrderRepository>()) {
+    getIt.unregister<SaleOrderRepository>();
+  }
+  getIt.registerLazySingleton<SaleOrderRepository>(
+    () => SaleOrderRepository(
+        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+  );
+
+  if (getIt.isRegistered<ProductRepository>()) {
+    getIt.unregister<ProductRepository>();
+  }
+  getIt.registerLazySingleton<ProductRepository>(
+    () => ProductRepository(
+        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+  );
+
+  if (getIt.isRegistered<PricelistRepository>()) {
+    getIt.unregister<PricelistRepository>();
+  }
+  getIt.registerLazySingleton<PricelistRepository>(
+    () => PricelistRepository(
+        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+  );
+}
+
+
+
+
 
 

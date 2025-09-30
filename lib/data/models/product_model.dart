@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:odoo_repository/odoo_repository.dart';
 
-/// Modelo para representar un Producto de Odoo (product.product)
+/// Modelo para representar un producto en Odoo
 class Product extends Equatable implements OdooRecord {
   final int id;
   final String? defaultCode;
@@ -11,6 +11,7 @@ class Product extends Equatable implements OdooRecord {
   final int? uomId;
   final String? uomName;
   final List<int> taxesIds;
+  final int? productTmplId;
 
   const Product({
     required this.id,
@@ -20,43 +21,30 @@ class Product extends Equatable implements OdooRecord {
     required this.listPrice,
     this.uomId,
     this.uomName,
-    required this.taxesIds,
+    this.taxesIds = const [],
+    this.productTmplId,
   });
 
   /// Crea un Product desde JSON
   factory Product.fromJson(Map<String, dynamic> json) {
-    // Helper robusto para parsear campos de relación (Many2one)
-    int? parseMany2oneId(dynamic value) {
-      if (value is List && value.isNotEmpty) {
-        return value[0] as int?;
-      }
-      return null;
-    }
-
-    String? parseMany2oneName(dynamic value) {
-      if (value is List && value.length > 1) {
-        return value[1] as String?;
-      }
-      return null;
-    }
-
-    // Helper para parsear Many2many (taxes_id)
-    List<int> parseMany2manyIds(dynamic value) {
-      if (value is List) {
-        return value.map((id) => id as int).toList();
-      }
-      return [];
-    }
-
     return Product(
       id: json['id'] as int,
-      defaultCode: json['default_code'] is String ? json['default_code'] : null,
-      name: json['name'] is String ? json['name'] : '',
-      type: json['type'] is String ? json['type'] : 'consu',
+      defaultCode: json['default_code'] as String?,
+      name: json['name'] as String? ?? '',
+      type: json['type'] as String? ?? 'product',
       listPrice: (json['list_price'] as num?)?.toDouble() ?? 0.0,
-      uomId: parseMany2oneId(json['uom_id']),
-      uomName: parseMany2oneName(json['uom_id']),
-      taxesIds: parseMany2manyIds(json['taxes_id']),
+      uomId: json['uom_id'] is List 
+          ? (json['uom_id'] as List)[0] as int
+          : json['uom_id'] as int?,
+      uomName: json['uom_id'] is List 
+          ? (json['uom_id'] as List)[1] as String
+          : null,
+      taxesIds: (json['taxes_id'] as List<dynamic>?)
+          ?.map((e) => e is List ? e[0] as int : e as int)
+          .toList() ?? [],
+      productTmplId: json['product_tmpl_id'] is List 
+          ? (json['product_tmpl_id'] as List).isNotEmpty ? (json['product_tmpl_id'] as List)[0] as int? : null
+          : json['product_tmpl_id'] as int?,
     );
   }
 
@@ -68,35 +56,38 @@ class Product extends Equatable implements OdooRecord {
       'name': name,
       'type': type,
       'list_price': listPrice,
-      'uom_id': uomId != null ? [uomId, uomName] : false,
-      'taxes_id': taxesIds,
+      'uom_id': uomId != null ? [uomId!, uomName ?? ''] : null,
+      'taxes_id': taxesIds.map((id) => [id, '']).toList(),
+      'product_tmpl_id': productTmplId,
     };
   }
 
-  /// Convierte Product a valores para Odoo (requerido por OdooRecord)
-  Map<String, dynamic> toVals() {
-    return {
-      'default_code': defaultCode,
-      'name': name,
-      'type': type,
-      'list_price': listPrice,
-      'uom_id': uomId,
-      'taxes_id': taxesIds,
-    };
+  /// Crea una copia con nuevos valores
+  Product copyWith({
+    int? id,
+    String? defaultCode,
+    String? name,
+    String? type,
+    double? listPrice,
+    int? uomId,
+    String? uomName,
+    List<int>? taxesIds,
+    int? productTmplId,
+  }) {
+    return Product(
+      id: id ?? this.id,
+      defaultCode: defaultCode ?? this.defaultCode,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      listPrice: listPrice ?? this.listPrice,
+      uomId: uomId ?? this.uomId,
+      uomName: uomName ?? this.uomName,
+      taxesIds: taxesIds ?? this.taxesIds,
+      productTmplId: productTmplId ?? this.productTmplId,
+    );
   }
 
-  /// Campos que se solicitan a Odoo
-  static List<String> get oFields => [
-        'id',
-        'default_code',
-        'name',
-        'type',
-        'list_price',
-        'uom_id',
-        'taxes_id',
-      ];
-
-  /// Getters útiles
+  // Getters de conveniencia
   bool get isService => type == 'service';
   bool get isConsumable => type == 'consu';
   bool get isStorable => type == 'product';
@@ -113,5 +104,22 @@ class Product extends Equatable implements OdooRecord {
         uomId,
         uomName,
         taxesIds,
+        productTmplId,
       ];
+
+  @override
+  Map<String, dynamic> toVals() {
+    return toJson();
+  }
+
+  static List<String> get oFields => [
+    'id',
+    'default_code',
+    'name',
+    'type',
+    'list_price',
+    'uom_id',
+    'taxes_id',
+    'product_tmpl_id',
+  ];
 }

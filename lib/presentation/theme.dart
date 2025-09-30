@@ -156,6 +156,11 @@ static ThemeData light = FlexThemeData.light(
     // Direct ThemeData properties.
     visualDensity: FlexColorScheme.comfortablePlatformDensity,
     cupertinoOverrideTheme: const CupertinoThemeData(applyThemeToAll: true),
+  ).copyWith(
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      backgroundColor: Color.fromARGB(255, 0, 208, 255),
+      extendedTextStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+    ),
   );
 
   // The FlexColorScheme defined dark mode ThemeData.

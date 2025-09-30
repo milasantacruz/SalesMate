@@ -86,3 +86,33 @@ class ProductRetrieved extends ProductState {
   @override
   List<Object?> get props => [product];
 }
+
+/// Estado cuando los productos están cargados con lista de precios
+class ProductLoadedWithPricelist extends ProductState {
+  final List<Product> products;
+  final int pricelistId;
+
+  const ProductLoadedWithPricelist({
+    required this.products,
+    required this.pricelistId,
+  });
+
+  @override
+  List<Object?> get props => [products, pricelistId];
+}
+
+/// Estado de resultado de búsqueda con lista de precios
+class ProductSearchResultWithPricelist extends ProductState {
+  final List<Product> products;
+  final String searchTerm;
+  final int pricelistId;
+
+  const ProductSearchResultWithPricelist({
+    required this.products,
+    required this.searchTerm,
+    required this.pricelistId,
+  });
+
+  @override
+  List<Object?> get props => [products, searchTerm, pricelistId];
+}

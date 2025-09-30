@@ -81,22 +81,32 @@ class _SaleOrdersListState extends State<SaleOrdersList> {
                                   const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text(
                               'Cliente: ${order.partnerName ?? 'N/A'}\nFecha: ${order.dateOrder}'),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                '\$${order.amountTotal.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green),
-                              ),
-                              const SizedBox(height: 4),
-                              Chip(
-                                label: Text(order.state),
-                                backgroundColor: _getStateColor(order.state),
-                              ),
-                            ],
+                          trailing: SizedBox(
+                            width: 120,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '\$${order.amountTotal.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green,
+                                      fontSize: 14),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Chip(
+                                  label: Text(
+                                    order.state,
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                  backgroundColor: _getStateColor(order.state),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       );

@@ -4,6 +4,8 @@ import '../../data/models/partner_model.dart';
 import '../bloc/partner_bloc.dart';
 import '../bloc/partner_state.dart';
 import '../bloc/partner_event.dart';
+import 'partner_orders_popup.dart';
+import '../pages/nuevo_pedido_page.dart';
 
 /// Widget que muestra la lista de partners
 class PartnersListWidget extends StatelessWidget {
@@ -182,90 +184,74 @@ class PartnersListWidget extends StatelessWidget {
   Widget _buildPartnerTile(BuildContext context, Partner partner) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: partner.isCompany 
-              ? Colors.blue 
-              : Colors.green,
-          child: Icon(
-            partner.isCompany 
-                ? Icons.business 
-                : Icons.person,
-            color: Colors.white,
-          ),
-        ),
-        title: Text(
-          partner.name,
-          style: const TextStyle(fontWeight: FontWeight.w500),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (partner.email != null)
-              Text(
-                partner.email!,
-                style: TextStyle(color: Colors.grey[600]),
+      child: Column(
+        children: [
+          ListTile(
+            leading: CircleAvatar(
+              backgroundColor: partner.isCompany 
+                  ? Colors.blue 
+                  : Colors.green,
+              child: Icon(
+                partner.isCompany 
+                    ? Icons.business 
+                    : Icons.person,
+                color: Colors.white,
               ),
-            if (partner.phone != null)
-              Text(
-                partner.phone!,
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            const SizedBox(height: 4),
-            Row(
+            ),
+            title: Text(
+              partner.name,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (partner.isCustomer)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'Cliente',
-                      style: TextStyle(fontSize: 12, color: Colors.green),
-                    ),
+                if (partner.email != null)
+                  Text(
+                    partner.email!,
+                    style: TextStyle(color: Colors.grey[600]),
                   ),
-                if (partner.isCustomer && partner.isSupplier)
-                  const SizedBox(width: 8),
-                if (partner.isSupplier)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'Proveedor',
-                      style: TextStyle(fontSize: 12, color: Colors.orange),
-                    ),
+                if (partner.phone != null)
+                  Text(
+                    partner.phone!,
+                    style: TextStyle(color: Colors.grey[600]),
                   ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    if (partner.isCustomer)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Cliente',
+                          style: TextStyle(fontSize: 12, color: Colors.green),
+                        ),
+                      ),
+                    if (partner.isCustomer && partner.isSupplier)
+                      const SizedBox(width: 8),
+                    if (partner.isSupplier)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Proveedor',
+                          style: TextStyle(fontSize: 12, color: Colors.orange),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
-          ],
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handleMenuAction(context, value, partner),
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'edit',
-              child: ListTile(
-                leading: Icon(Icons.edit),
-                title: Text('Editar'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: ListTile(
-                leading: Icon(Icons.delete, color: Colors.red),
-                title: Text('Eliminar', style: TextStyle(color: Colors.red)),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ],
-        ),
-        onTap: () => _showPartnerDetails(context, partner),
+            trailing: _buildPartnerMenu(context, partner),
+            onTap: () => _showPartnerDetails(context, partner),
+          ),
+        ],
       ),
     );
   }
@@ -273,11 +259,11 @@ class PartnersListWidget extends StatelessWidget {
   /// Maneja las acciones del menú contextual
   void _handleMenuAction(BuildContext context, String action, Partner partner) {
     switch (action) {
-      case 'edit':
-        _showEditPartnerDialog(context, partner);
+      case 'history':
+        _showOrderHistory(context, partner);
         break;
-      case 'delete':
-        _showDeleteConfirmation(context, partner);
+      case 'new_order':
+        _createNewOrder(context, partner);
         break;
     }
   }
@@ -310,38 +296,6 @@ class PartnersListWidget extends StatelessWidget {
     );
   }
 
-  /// Muestra el diálogo de edición
-  void _showEditPartnerDialog(BuildContext context, Partner partner) {
-    // Por ahora solo mostramos un mensaje
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Función de edición en desarrollo')),
-    );
-  }
-
-  /// Muestra la confirmación de eliminación
-  void _showDeleteConfirmation(BuildContext context, Partner partner) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar eliminación'),
-        content: Text('¿Estás seguro de que quieres eliminar a ${partner.name}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              context.read<PartnerBloc>().add(DeletePartner(partner.id));
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// Obtiene el mensaje de la operación en progreso
   String _getOperationMessage(String operation) {
@@ -357,19 +311,51 @@ class PartnersListWidget extends StatelessWidget {
     }
   }
 
-  /// Obtiene el subtítulo del filtro
-  String? _getFilterSubtitle(String? filterType) {
-    switch (filterType) {
-      case 'customers':
-        return 'Mostrando solo clientes';
-      case 'suppliers':
-        return 'Mostrando solo proveedores';
-      case 'companies':
-        return 'Mostrando solo empresas';
-      case 'all':
-        return 'Mostrando todos los partners';
-      default:
-        return null;
-    }
+
+  /// Construye el menú del partner con opciones de historial y nuevo pedido
+  Widget _buildPartnerMenu(BuildContext context, Partner partner) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.menu),
+      onSelected: (value) => _handleMenuAction(context, value, partner),
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'history',
+          child: ListTile(
+            leading: Icon(Icons.history),
+            title: Text('Ver historial de pedidos'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'new_order',
+          child: ListTile(
+            leading: Icon(Icons.add_shopping_cart),
+            title: Text('Crear nuevo pedido'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Muestra el historial de pedidos del partner
+  void _showOrderHistory(BuildContext context, Partner partner) {
+    showDialog(
+      context: context,
+      builder: (context) => PartnerOrdersPopup(
+        partnerId: partner.id,
+        partnerName: partner.name,
+      ),
+    );
+  }
+
+  /// Abre la página para crear un nuevo pedido
+  void _createNewOrder(BuildContext context, Partner partner) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => NuevoPedidoPage(selectedPartner: partner),
+      ),
+    );
   }
 }
+

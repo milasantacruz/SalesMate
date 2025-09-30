@@ -5,12 +5,11 @@ import '../bloc/auth/auth_event.dart';
 import '../bloc/auth/auth_state.dart';
 import '../bloc/partner_bloc.dart';
 import '../bloc/partner_event.dart';
-import '../bloc/employee/employee_bloc.dart';
-import '../bloc/employee/employee_event.dart';
 import '../widgets/partners_list.dart';
 import '../widgets/employees_list.dart';
 import '../widgets/sale_orders_list.dart';
 import '../widgets/products_list.dart';
+import 'nuevo_pedido_page.dart';
 
 /// Página principal de la aplicación
 class HomePage extends StatefulWidget {
@@ -29,11 +28,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) {
+      setState(() {
+        // Forzar reconstrucción del widget cuando cambie el tab
+      });
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -211,7 +220,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ProductsList(),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           final currentIndex = _tabController.index;
           if (currentIndex == 0) {
@@ -225,7 +234,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           }
         },
         tooltip: _getFloatingActionButtonTooltip(),
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: Text(_getFloatingActionButtonTooltip(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
       ),
     );
   }
@@ -457,17 +467,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   /// Muestra el diálogo para crear una nueva orden de venta
   void _showCreateSaleOrderDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Crear Orden de Venta'),
-        content: const Text('Funcionalidad de crear orden de venta próximamente...'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
+    // Ya no se necesita el MultiBlocProvider aquí porque los BLoCs
+    // se proveen en el nivel superior de MaterialApp.
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const NuevoPedidoPage(),
       ),
     );
   }
@@ -498,7 +502,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       case 1:
         return 'Crear Empleado';
       case 2:
-        return 'Crear Orden de Venta';
+        return 'Nuevo Pedido';
       case 3:
         return 'Crear Producto';
       default:
@@ -506,3 +510,4 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 }
+

@@ -54,3 +54,27 @@ class GetProductById extends ProductEvent {
   @override
   List<Object?> get props => [id];
 }
+
+/// Evento para cargar productos con lista de precios específica
+class LoadProductsWithPricelist extends ProductEvent {
+  final int partnerId;
+
+  const LoadProductsWithPricelist({required this.partnerId});
+
+  @override
+  List<Object?> get props => [partnerId];
+}
+
+/// Evento para buscar productos con lista de precios específica
+class SearchProductsWithPricelist extends ProductEvent {
+  final String searchTerm;
+  final int partnerId;
+
+  const SearchProductsWithPricelist({
+    required this.searchTerm,
+    required this.partnerId,
+  });
+
+  @override
+  List<Object?> get props => [searchTerm, partnerId];
+}

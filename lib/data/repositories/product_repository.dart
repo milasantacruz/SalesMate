@@ -45,6 +45,9 @@ class ProductRepository extends OfflineOdooRepository<Product> {
       domain.add(['type', '=', _type!]);
     }
 
+    print('🔍 PRODUCT_REPO: Domain: $domain');
+    print('🔍 PRODUCT_REPO: Fields: $oFields');
+    
     final response = await env.orpc.callKw({
       'model': modelName,
       'method': 'search_read',
@@ -57,6 +60,8 @@ class ProductRepository extends OfflineOdooRepository<Product> {
         'offset': _offset,
       },
     });
+    
+    print('🔍 PRODUCT_REPO: Response length: ${response is List ? response.length : 'N/A'}');
     return response as List<dynamic>;
   }
 
@@ -80,17 +85,25 @@ class ProductRepository extends OfflineOdooRepository<Product> {
       if (await netConn.checkNetConn() == netConnState.online) {
         // ONLINE: Obtener datos frescos del servidor con filtros aplicados
         final recordsJson = await searchRead();
+        print('🔍 PRODUCT_REPO: recordsJson length: ${recordsJson.length}');
         final records =
             recordsJson.map((item) => fromJson(item as Map<String, dynamic>)).toList();
+        print('🔍 PRODUCT_REPO: records length after fromJson: ${records.length}');
 
         // Guardar en caché para uso offline (SIN filtros aplicados)
         // Primero obtenemos todos los datos sin filtros para la caché
-        final allRecordsJson = await _getAllRecordsFromServer();
-        final allRecords = allRecordsJson.map((item) => fromJson(item as Map<String, dynamic>)).toList();
-        await cache.put('Product_records', allRecords.map((r) => r.toJson()).toList());
+        try {
+          final allRecordsJson = await _getAllRecordsFromServer();
+          final allRecords = allRecordsJson.map((item) => fromJson(item as Map<String, dynamic>)).toList();
+          await cache.put('Product_records', allRecords.map((r) => r.toJson()).toList());
+          print('🔍 PRODUCT_REPO: Cache updated successfully');
+        } catch (e) {
+          print('🔍 PRODUCT_REPO: Error updating cache: $e');
+        }
         
         // Actualizar la lista local con los datos filtrados
         latestRecords = records;
+        print('🔍 PRODUCT_REPO: latestRecords assigned: ${latestRecords.length}');
       } else {
         // OFFLINE: Cargar datos desde la caché local y aplicar filtros localmente
         final cachedData = cache.get('Product_records', defaultValue: <Map<String, dynamic>>[]);
@@ -125,6 +138,7 @@ class ProductRepository extends OfflineOdooRepository<Product> {
 
   /// Obtiene todos los registros del servidor sin filtros (para caché)
   Future<List<dynamic>> _getAllRecordsFromServer() async {
+    print('🔍 PRODUCT_REPO: _getAllRecordsFromServer() called');
     final response = await env.orpc.callKw({
       'model': modelName,
       'method': 'search_read',
@@ -140,6 +154,7 @@ class ProductRepository extends OfflineOdooRepository<Product> {
         'offset': 0,
       },
     });
+    print('🔍 PRODUCT_REPO: _getAllRecordsFromServer() response length: ${response is List ? response.length : 'N/A'}');
     return response as List<dynamic>;
   }
 
@@ -218,3 +233,4 @@ class ProductRepository extends OfflineOdooRepository<Product> {
     }
   }
 }
+
