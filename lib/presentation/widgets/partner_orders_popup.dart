@@ -33,59 +33,54 @@ class _PartnerOrdersPopupState extends State<PartnerOrdersPopup> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: MediaQuery.of(context).size.height * 0.8,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Historial de Pedidos\n${widget.partnerName}',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'Historial de Pedidos\n${widget.partnerName}',
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            
-            // Lista de órdenes
-            Expanded(
-              child: BlocBuilder<SaleOrderBloc, SaleOrderState>(
-                builder: (context, state) {
-                  if (state is SaleOrderLoading) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  
-                  if (state is SaleOrdersLoadedByPartner && 
-                      state.partnerId == widget.partnerId) {
-                    if (state.orders.isEmpty) {
-                      return _buildEmptyState();
-                    }
-                    return _buildOrdersList(state.orders);
-                  }
-                  
-                  if (state is SaleOrderError) {
-                    return _buildErrorState(state.message);
-                  }
-                  
-                  return const Center(
-                    child: Text('Cargando órdenes...'),
-                  );
-                },
               ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // Lista de órdenes
+          Expanded(
+            child: BlocBuilder<SaleOrderBloc, SaleOrderState>(
+              builder: (context, state) {
+                if (state is SaleOrderLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                
+                if (state is SaleOrdersLoadedByPartner && 
+                    state.partnerId == widget.partnerId) {
+                  if (state.orders.isEmpty) {
+                    return _buildEmptyState();
+                  }
+                  return _buildOrdersList(state.orders);
+                }
+                
+                if (state is SaleOrderError) {
+                  return _buildErrorState(state.message);
+                }
+                
+                return const Center(
+                  child: Text('Cargando órdenes...'),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -143,13 +138,13 @@ class _PartnerOrdersPopupState extends State<PartnerOrdersPopup> {
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-            leading: CircleAvatar(
+            /*leading: CircleAvatar(
               backgroundColor: _getStateColor(order.state),
               child: Text(
                 order.name.split(' ').last, // Última parte del nombre de la orden
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
-            ),
+            ),*/
             title: Text(order.name),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

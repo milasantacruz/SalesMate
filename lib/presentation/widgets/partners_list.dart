@@ -340,12 +340,32 @@ class PartnersListWidget extends StatelessWidget {
 
   /// Muestra el historial de pedidos del partner
   void _showOrderHistory(BuildContext context, Partner partner) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => PartnerOrdersPopup(
-        partnerId: partner.id,
-        partnerName: partner.name,
-      ),
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.96,
+          minChildSize: 0.5,
+          maxChildSize: 0.96,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(0)),
+              ),
+              child: PartnerOrdersPopup(
+                partnerId: partner.id,
+                partnerName: partner.name,
+                // Si el popup soporta scrollController, pásalo; si no, su lista interna ya es scrollable
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
