@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:odoo_repository/odoo_repository.dart';
+import 'package:odoo_test/data/models/sale_order_line_model.dart';
 
 /// Modelo para representar una Orden de Venta de Odoo (sale.order)
 class SaleOrder extends Equatable implements OdooRecord {
@@ -11,6 +12,7 @@ class SaleOrder extends Equatable implements OdooRecord {
   final double amountTotal;
   final String state;
   final List<int> orderLineIds;
+  final List<SaleOrderLine> orderLines;
 
   const SaleOrder({
     required this.id,
@@ -21,6 +23,7 @@ class SaleOrder extends Equatable implements OdooRecord {
     required this.amountTotal,
     required this.state,
     required this.orderLineIds,
+    this.orderLines = const [],
   });
 
   /// Crea una SaleOrder desde JSON
@@ -52,6 +55,7 @@ class SaleOrder extends Equatable implements OdooRecord {
               ?.map((id) => id as int)
               .toList() ??
           [],
+      orderLines: const [],
     );
   }
 
@@ -66,6 +70,30 @@ class SaleOrder extends Equatable implements OdooRecord {
       'state': state,
       'order_line': orderLineIds,
     };
+  }
+
+  SaleOrder copyWith({
+    int? id,
+    String? name,
+    int? partnerId,
+    String? partnerName,
+    String? dateOrder,
+    double? amountTotal,
+    String? state,
+    List<int>? orderLineIds,
+    List<SaleOrderLine>? orderLines,
+  }) {
+    return SaleOrder(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      partnerId: partnerId ?? this.partnerId,
+      partnerName: partnerName ?? this.partnerName,
+      dateOrder: dateOrder ?? this.dateOrder,
+      amountTotal: amountTotal ?? this.amountTotal,
+      state: state ?? this.state,
+      orderLineIds: orderLineIds ?? this.orderLineIds,
+      orderLines: orderLines ?? this.orderLines,
+    );
   }
 
   /// Convierte SaleOrder a valores para Odoo (requerido por OdooRecord)
@@ -101,5 +129,9 @@ class SaleOrder extends Equatable implements OdooRecord {
         amountTotal,
         state,
         orderLineIds,
+        orderLines,
       ];
 }
+
+
+

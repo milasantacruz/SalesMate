@@ -62,9 +62,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
           if (state is SaleOrderLoadedById) {
             setState(() {
               _currentOrder = state.order;
-              _orderLines = state.order.orderLineIds.map((id) => 
-                SaleOrderLine(id: id, productId: 0, productName: '', quantity: 0, priceUnit: 0, priceSubtotal: 0, taxesIds: [])
-              ).toList();
+              _orderLines = state.order.orderLines;
             });
           } else if (state is SaleOrderError) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -242,7 +240,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             leading: CircleAvatar(
               child: Text('${line.quantity.toInt()}'),
             ),
-            title: Text('Producto ID: ${line.productId}'),
+            title: Text(line.productName),
             subtitle: Text('Precio: \$${line.priceUnit.toStringAsFixed(2)}'),
             trailing: _isEditing
                 ? IconButton(

@@ -22,7 +22,7 @@ app.use(cors({
 
 // Proxy para el servidor Odoo
 const odooProxy = createProxyMiddleware({
-  target: 'https://odooconsultores-mtfood-staging-23633807.dev.odoo.com',
+  target: 'https://odooconsultores-mtfood-staging-23978430.dev.odoo.com',
   changeOrigin: true,
   secure: true,
   logLevel: 'debug',
@@ -75,7 +75,7 @@ app.use('/', odooProxy);
 
 app.listen(PORT, () => {
   console.log(`🚀 CORS Proxy Server running on http://localhost:${PORT}`);
-  console.log(`📡 Proxying to: https://odooconsultores-mtfood-staging-23633807.dev.odoo.com`);
+  console.log(`📡 Proxying to: https://odooconsultores-mtfood-staging-23978430.dev.odoo.com`);
   console.log(`🔧 CORS enabled with credentials support`);
   console.log(`🍪 Cookie debugging enabled`);
 });

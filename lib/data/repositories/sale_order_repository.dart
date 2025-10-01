@@ -516,7 +516,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     }
   }
 
-  /// Obtiene una orden de venta específica por ID
+  /// Obtiene una orden de venta específica por ID, incluyendo sus líneas
   Future<SaleOrder?> getOrderById(int orderId) async {
     try {
       print('🛒 SALE_ORDER_REPO: Obteniendo orden $orderId...');
@@ -531,8 +531,37 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       });
       
       if (result is List && result.isNotEmpty) {
-        final order = fromJson(result.first);
-        print('✅ SALE_ORDER_REPO: Orden $orderId obtenida');
+        var order = fromJson(result.first);
+        print('✅ SALE_ORDER_REPO: Orden $orderId obtenida, obteniendo líneas...');
+
+        // Ahora, obtén los detalles de las líneas de pedido
+        if (order.orderLineIds.isNotEmpty) {
+          final linesResult = await env.orpc.callKw({
+            'model': 'sale.order.line',
+            'method': 'read',
+            'args': [order.orderLineIds],
+            'kwargs': {
+              'fields': [
+                'id',
+                'product_id',
+                'name',
+                'product_uom_qty',
+                'price_unit',
+                'price_subtotal',
+                'tax_id'
+              ],
+            },
+          });
+
+          if (linesResult is List) {
+            final orderLines = linesResult
+                .map((lineData) => SaleOrderLine.fromJson(lineData))
+                .toList();
+            order = order.copyWith(orderLines: orderLines);
+            print('✅ SALE_ORDER_REPO: ${orderLines.length} líneas obtenidas para orden $orderId');
+          }
+        }
+        
         return order;
       }
       

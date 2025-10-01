@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/sale_order/sale_order_bloc.dart';
 import '../bloc/sale_order/sale_order_state.dart';
 import '../bloc/sale_order/sale_order_event.dart';
+import '../pages/sale_order_view_page.dart';
 
 /// Widget para mostrar la lista de Órdenes de Venta con filtros
 class SaleOrdersList extends StatefulWidget {
@@ -81,6 +82,13 @@ class _SaleOrdersListState extends State<SaleOrdersList> {
                                   const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text(
                               'Cliente: ${order.partnerName ?? 'N/A'}\nFecha: ${order.dateOrder}'),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => SaleOrderViewPage(orderId: order.id),
+                              ),
+                            );
+                          },
                           trailing: SizedBox(
                             width: 120,
                             child: Column(
@@ -198,3 +206,4 @@ class _SaleOrdersListState extends State<SaleOrdersList> {
     }
   }
 }
+
