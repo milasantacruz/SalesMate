@@ -17,7 +17,7 @@ jobs:
     - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.24.0'  # Versión más reciente que soporta Dart 3.8+
+        flutter-version: '3.32.5'  # Versión más reciente que soporta Dart 3.8+
         channel: 'stable'
         
     - name: Install dependencies
