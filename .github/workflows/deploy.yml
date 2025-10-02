@@ -24,7 +24,7 @@ jobs:
       run: flutter pub get
       
     - name: Build web
-      run: flutter build web --release --base-href "/odoo_test/"
+      run: flutter build web --web-renderer html --base-href "/odoo_test/"
     
     - name: Add 404.html for SPA routing
       run: cp build/web/index.html build/web/404.html
