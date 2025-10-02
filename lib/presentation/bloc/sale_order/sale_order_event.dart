@@ -97,6 +97,16 @@ class UpdateSaleOrder extends SaleOrderEvent {
   List<Object?> get props => [orderId, orderData];
 }
 
+/// Event to send a quotation (draft → sent)
+class SendQuotation extends SaleOrderEvent {
+  final int orderId;
+  
+  const SendQuotation({required this.orderId});
+  
+  @override
+  List<Object?> get props => [orderId];
+}
+
 
 
 

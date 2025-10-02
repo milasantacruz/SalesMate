@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/models/sale_order_model.dart';
 import '../../data/models/sale_order_line_model.dart';
-import '../../data/models/partner_model.dart';
 import '../bloc/sale_order/sale_order_bloc.dart';
 import '../bloc/sale_order/sale_order_event.dart';
 import '../bloc/sale_order/sale_order_state.dart';
@@ -50,6 +49,18 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             if (_currentOrder!.state == 'draft') ...[
               IconButton(
                 icon: const Icon(Icons.send),
+                onPressed: _sendQuotation,
+                tooltip: 'Enviar cotización',
+              ),
+              IconButton(
+                icon: const Icon(Icons.check),
+                onPressed: _confirmOrder,
+                tooltip: 'Confirmar orden',
+              ),
+            ],
+            if (_currentOrder!.state == 'sent') ...[
+              IconButton(
+                icon: const Icon(Icons.check),
                 onPressed: _confirmOrder,
                 tooltip: 'Confirmar orden',
               ),
@@ -69,6 +80,26 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
               SnackBar(
                 content: Text(state.message),
                 backgroundColor: Colors.red,
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'Ver detalles',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Error'),
+                        content: Text(state.message),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Cerrar'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             );
           } else if (state is SaleOrderUpdated) {
@@ -81,6 +112,13 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             setState(() {
               _isEditing = false;
             });
+          } else if (state is SaleOrderSent) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Cotización enviada exitosamente'),
+                backgroundColor: Colors.green,
+              ),
+            );
           }
         },
         builder: (context, state) {
@@ -262,9 +300,10 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
 
   void _saveOrder() {
     if (_currentOrder == null) return;
-    
+    //TODO: Implementar la lógica para guardar los cambios
     // Aquí implementarías la lógica para guardar los cambios
     // Por ahora solo cambiamos el estado de edición
+    
     setState(() {
       _isEditing = false;
     });
@@ -277,14 +316,105 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     );
   }
 
+  void _sendQuotation() {
+    if (_currentOrder == null) return;
+    
+    // Validar que la orden pueda ser enviada
+    String? validationError = _validateOrderForSending();
+    if (validationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(validationError),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enviar Cotización'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Enviar esta cotización al cliente?'),
+            const SizedBox(height: 16),
+            Text(
+              'Orden: ${_currentOrder!.name}',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            if (_currentOrder!.partnerName != null)
+              Text('Cliente: ${_currentOrder!.partnerName}'),
+            Text('Productos: ${_orderLines.length}'),
+            Text('Total: \$${_currentOrder!.amountTotal.toStringAsFixed(2)}'),
+            const SizedBox(height: 8),
+            const Text(
+              'Se enviará por email al cliente.',
+              style: TextStyle(
+                fontStyle: FontStyle.italic,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              context.read<SaleOrderBloc>().add(
+                SendQuotation(orderId: _currentOrder!.id),
+              );
+            },
+            child: const Text('Enviar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmOrder() {
     if (_currentOrder == null) return;
+    
+    // Validar que la orden pueda ser confirmada
+    String? validationError = _validateOrderForConfirmation();
+    if (validationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(validationError),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
     
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmar Orden'),
-        content: const Text('¿Estás seguro de que quieres confirmar esta orden?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Estás seguro de que quieres confirmar esta orden?'),
+            const SizedBox(height: 16),
+            Text(
+              'Orden: ${_currentOrder!.name}',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            if (_currentOrder!.partnerName != null)
+              Text('Cliente: ${_currentOrder!.partnerName}'),
+            Text('Productos: ${_orderLines.length}'),
+            Text('Total: \$${_currentOrder!.amountTotal.toStringAsFixed(2)}'),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -305,6 +435,60 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
         ],
       ),
     );
+  }
+
+  String? _validateOrderForConfirmation() {
+    if (_currentOrder == null) {
+      return 'Orden no encontrada';
+    }
+    
+    if (_currentOrder!.state != 'draft') {
+      return 'Solo se pueden confirmar órdenes en estado borrador';
+    }
+    
+    if (_currentOrder!.partnerId == null) {
+      return 'La orden debe tener un cliente asignado';
+    }
+    
+    if (_orderLines.isEmpty) {
+      return 'La orden debe tener al menos un producto';
+    }
+    
+    // Verificar que todas las líneas tengan cantidad > 0
+    for (int i = 0; i < _orderLines.length; i++) {
+      if (_orderLines[i].quantity <= 0) {
+        return 'El producto "${_orderLines[i].productName}" debe tener una cantidad mayor a 0';
+      }
+    }
+    
+    return null; // Sin errores
+  }
+
+  String? _validateOrderForSending() {
+    if (_currentOrder == null) {
+      return 'Orden no encontrada';
+    }
+    
+    if (_currentOrder!.state != 'draft') {
+      return 'Solo se pueden enviar cotizaciones en estado borrador';
+    }
+    
+    if (_currentOrder!.partnerId == null) {
+      return 'La orden debe tener un cliente asignado';
+    }
+    
+    if (_orderLines.isEmpty) {
+      return 'La orden debe tener al menos un producto';
+    }
+    
+    // Verificar que todas las líneas tengan cantidad > 0
+    for (int i = 0; i < _orderLines.length; i++) {
+      if (_orderLines[i].quantity <= 0) {
+        return 'El producto "${_orderLines[i].productName}" debe tener una cantidad mayor a 0';
+      }
+    }
+    
+    return null; // Sin errores
   }
 
   void _removeOrderLine(int index) {

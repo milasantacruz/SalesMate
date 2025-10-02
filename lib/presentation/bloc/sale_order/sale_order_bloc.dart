@@ -18,6 +18,7 @@ class SaleOrderBloc extends Bloc<SaleOrderEvent, SaleOrderState> {
     on<LoadSaleOrdersByPartner>(_onLoadSaleOrdersByPartner);
     on<LoadSaleOrderById>(_onLoadSaleOrderById);
     on<UpdateSaleOrder>(_onUpdateSaleOrder);
+    on<SendQuotation>(_onSendQuotation);
   }
 
   Future<void> _onLoadSaleOrders(
@@ -197,6 +198,7 @@ class SaleOrderBloc extends Bloc<SaleOrderEvent, SaleOrderState> {
     UpdateSaleOrder event,
     Emitter<SaleOrderState> emit,
   ) async {
+    print('🛒 SALE_ORDER_BLOC: _onUpdateSaleOrder called');
     emit(SaleOrderUpdating(orderId: event.orderId));
     try {
       final success = await _saleOrderRepository.updateOrder(
@@ -205,6 +207,7 @@ class SaleOrderBloc extends Bloc<SaleOrderEvent, SaleOrderState> {
       );
       
       if (success) {
+        print('🛒 SALE_ORDER_BLOC: Order updated successfully');
         // Recargar la orden actualizada
         final updatedOrder = await _saleOrderRepository.getOrderById(event.orderId);
         if (updatedOrder != null) {
@@ -217,6 +220,35 @@ class SaleOrderBloc extends Bloc<SaleOrderEvent, SaleOrderState> {
       }
     } catch (e) {
       emit(SaleOrderError('Error actualizando orden: $e'));
+    }
+  }
+
+  Future<void> _onSendQuotation(
+      SendQuotation event, Emitter<SaleOrderState> emit) async {
+    emit(SaleOrderSending(orderId: event.orderId));
+    try {
+      final success = await _saleOrderRepository.sendQuotation(event.orderId);
+      
+      if (success) {
+        emit(SaleOrderSent(orderId: event.orderId));
+        
+        // Recargar la orden actualizada
+        print('🔄 SALE_ORDER_BLOC: Recargando orden después de enviar cotización...');
+        final updatedOrder = await _saleOrderRepository.getOrderById(event.orderId);
+        if (updatedOrder != null) {
+          print('✅ SALE_ORDER_BLOC: Orden recargada - Estado: ${updatedOrder.state}');
+          print('✅ SALE_ORDER_BLOC: Datos orden recargada: id=${updatedOrder.id}, name=${updatedOrder.name}, state=${updatedOrder.state}');
+          emit(SaleOrderLoadedById(order: updatedOrder));
+        } else {
+          print('❌ SALE_ORDER_BLOC: No se pudo obtener la orden actualizada');
+          emit(SaleOrderError('Error recargando orden enviada'));
+        }
+      } else {
+        print('❌ SALE_ORDER_BLOC: sendQuotation retornó false');
+        emit(SaleOrderError('Error enviando cotización'));
+      }
+    } catch (e) {
+      emit(SaleOrderError('Error enviando cotización: $e'));
     }
   }
 }

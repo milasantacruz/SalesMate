@@ -264,22 +264,134 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     }
   }
 
-  /// Actualiza el estado de una orden de venta
+  /// Envía una cotización (draft → sent)
+  Future<bool> sendQuotation(int orderId) async {
+    try {
+      print('📧 SALE_ORDER_REPO: Enviando cotización $orderId...');
+      print('📧 SALE_ORDER_REPO: Estado actual antes de envío - obtieniendo datos...');
+
+      // Verificar estado actual antes del envío
+      final currentState = await env.orpc.callKw({
+        'model': modelName,
+        'method': 'read',
+        'args': [[orderId]],
+        'kwargs': {
+          'fields': ['id', 'name', 'state', 'partner_id'],
+        },
+      });
+
+      if (currentState is List && currentState.isNotEmpty) {
+        final orderData = currentState.first as Map<String, dynamic>;
+        print('📧 SALE_ORDER_REPO: Estado ANTES de envío: ${orderData['state']}');
+        print('📧 SALE_ORDER_REPO: Nombre orden: ${orderData['name']}');
+      }
+
+      print('📧 SALE_ORDER_REPO: Llamando action_quotation_send...');
+      try {
+        await env.orpc.callKw({
+          'model': modelName,
+          'method': 'action_quotation_send',
+          'args': [[orderId]],
+          'kwargs': {},
+        });
+        print('✅ SALE_ORDER_REPO: action_quotation_send ejecutado sin excepción');
+      } catch (e) {
+        print('⚠️ SALE_ORDER_REPO: action_quotation_send falló: $e');
+        print('🔄 SALE_ORDER_REPO: Intentando cambio de estado manual...');
+      }
+      
+      // Si action_quotation_send no funciona, cambiar estado manualmente
+      await env.orpc.callKw({
+        'model': modelName,
+        'method': 'write',
+        'args': [[orderId], {'state': 'sent'}],
+        'kwargs': {},
+      });
+      print('✅ SALE_ORDER_REPO: Estado cambiado manualmente a sent');
+
+      // Verificar estado después del envío
+      print('📧 SALE_ORDER_REPO: Verificando estado después del envío...');
+      final afterState = await env.orpc.callKw({
+        'model': modelName,
+        'method': 'read',
+        'args': [[orderId]],
+        'kwargs': {
+          'fields': ['id', 'name', 'state', 'partner_id'],
+        },
+      });
+
+      if (afterState is List && afterState.isNotEmpty) {
+        final orderData = afterState.first as Map<String, dynamic>;
+        print('📧 SALE_ORDER_REPO: Estado DESPUÉS de envío: ${orderData['state']}');
+        
+        if (orderData['state'] == 'sent') {
+          print('✅ SALE_ORDER_REPO: ⭐ Estado correctamente cambiado a SENT ⭐');
+        } else {
+          print('⚠️ SALE_ORDER_REPO: ⚠️ Estado NO cambió - sigue siendo: ${orderData['state']} ⚠️');
+          // Intentar debug adicional
+          print('📧 SALE_ORDER_REPO: Datos completos de la orden después del envío: $orderData');
+        }
+      }
+
+      print('✅ SALE_ORDER_REPO: Proceso sendQuotation completado');
+      return true;
+    } catch (e) {
+      print('❌ SALE_ORDER_REPO: Error enviando cotización: $e');
+      print('❌ SALE_ORDER_REPO: Tipo de error: ${e.runtimeType}');
+      if (e is OdooException) {
+      print('❌ SALE_ORDER_REPO: Error detalles: ${e.message}');
+        
+        // Re-lanzar con mensaje más claro
+        if (e.message.contains('no email template') ||
+            e.message.contains('no partner email')) {
+          throw Exception('La orden no puede ser enviada: Falta dirección de email del cliente');
+        } else {
+          throw Exception('Error enviando cotización: ${e.message}');
+        }
+      }
+      return false;
+    }
+  }
+
+  /// Actualiza el estado de una orden de venta usando métodos específicos de Odoo
   Future<bool> updateOrderState(int orderId, String newState) async {
     try {
       print('🛒 SALE_ORDER_REPO: Actualizando estado de orden $orderId a $newState');
 
-      await env.orpc.callKw({
-        'model': modelName,
-        'method': 'write',
-        'args': [[orderId], {'state': newState}],
-        'kwargs': {},
-      });
+      if (newState == 'sale') {
+        // Para confirmar orden, usar método específico
+        await env.orpc.callKw({
+          'model': modelName,
+          'method': 'action_confirm',
+          'args': [[orderId]],
+          'kwargs': {},
+        });
+        print('✅ SALE_ORDER_REPO: Orden confirmada exitosamente usando action_confirm');
+      } else {
+        // Para otros estados usar write directamente
+        await env.orpc.callKw({
+          'model': modelName,
+          'method': 'write',
+          'args': [[orderId], {'state': newState}],
+          'kwargs': {},
+        });
+        print('✅ SALE_ORDER_REPO: Estado actualizado exitosamente');
+      }
 
-      print('✅ SALE_ORDER_REPO: Estado actualizado exitosamente');
       return true;
     } catch (e) {
       print('❌ SALE_ORDER_REPO: Error actualizando estado: $e');
+      if (e is OdooException) {
+        print('❌ SALE_ORDER_REPO: Error detalles: ${e.message}');
+        
+        // Verificar si el error es por falta de datos requeridos
+        if (e.message.contains('missing required field') || 
+            e.message.contains('is required') ||
+            e.message.contains('no lines') ||
+            e.message.contains('no partner')) {
+          throw Exception('La orden no puede ser confirmada: ${e.message}');
+        }
+      }
       return false;
     }
   }
@@ -578,19 +690,63 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   Future<bool> updateOrder(int orderId, Map<String, dynamic> orderData) async {
     try {
       print('🛒 SALE_ORDER_REPO: Actualizando orden $orderId...');
+      print('🛒 SALE_ORDER_REPO: Order data: $orderData');
       
-      await env.orpc.callKw({
-        'model': modelName,
-        'method': 'write',
-        'args': [[orderId], orderData],
-      });
+      // Si se está intentando cambiar el estado a 'sale', usar action_confirm
+      if (orderData['state'] == 'sale') {
+        print('🛒 SALE_ORDER_REPO: Cambiando estado a sale, usando action_confirm...');
+        
+        // Primero actualizar otros campos si los hay (sin state)
+        final otherData = Map<String, dynamic>.from(orderData);
+        otherData.remove('state');
+        
+        if (otherData.isNotEmpty) {
+          await env.orpc.callKw({
+            'model': modelName,
+            'method': 'write',
+            'args': [[orderId], otherData],
+          });
+          print('🛒 SALE_ORDER_REPO: Otros campos actualizados antes de confirmar');
+        }
+        
+        // Luego confirmar la orden
+        await env.orpc.callKw({
+          'model': modelName,
+          'method': 'action_confirm',
+          'args': [[orderId]],
+          'kwargs': {},
+        });
+        
+        print('✅ SALE_ORDER_REPO: Orden $orderId confirmada exitosamente');
+      } else {
+        // Para otros cambios, usar write normal
+        await env.orpc.callKw({
+          'model': modelName,
+          'method': 'write',
+          'args': [[orderId], orderData],
+        });
+        
+        print('✅ SALE_ORDER_REPO: Orden $orderId actualizada');
+      }
       
-      print('✅ SALE_ORDER_REPO: Orden $orderId actualizada');
       return true;
       
     } catch (e) {
       print('❌ SALE_ORDER_REPO: Error actualizando orden $orderId: $e');
-      return false;
+      if (e is OdooException) {
+        print('❌ SALE_ORDER_REPO: Error detalles: ${e.message}');
+        
+        // Re-lanzar con mensaje más claro para la UI
+        if (e.message.contains('missing required field') || 
+            e.message.contains('is required') ||
+            e.message.contains('no lines') ||
+            e.message.contains('no partner')) {
+          throw Exception('La orden no puede ser confirmada: Verifica que tenga cliente y productos');
+        } else {
+          throw Exception('Error del servidor: ${e.message}');
+        }
+      }
+      throw Exception('Error inesperado al actualizar orden');
     }
   }
 }

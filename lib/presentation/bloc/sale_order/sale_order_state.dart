@@ -112,6 +112,26 @@ class SaleOrderLoadedById extends SaleOrderState {
   List<Object> get props => [order];
 }
 
+/// Estado cuando se está enviando una cotización
+class SaleOrderSending extends SaleOrderState {
+  final int orderId;
+
+  const SaleOrderSending({required this.orderId});
+
+  @override
+  List<Object> get props => [orderId];
+}
+
+/// Estado cuando se envió una cotización exitosamente
+class SaleOrderSent extends SaleOrderState {
+  final int orderId;
+
+  const SaleOrderSent({required this.orderId});
+
+  @override
+  List<Object> get props => [orderId];
+}
+
 
 
 

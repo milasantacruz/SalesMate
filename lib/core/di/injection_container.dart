@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:get_it/get_it.dart';
+import 'package:http/http.dart' as http;
 import 'package:odoo_repository/odoo_repository.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
 
@@ -7,6 +8,7 @@ import '../constants/app_constants.dart';
 import '../network/network_connectivity.dart';
 import '../cache/custom_odoo_kv.dart';
 import '../http/session_interceptor.dart';
+import '../http/odoo_client_factory.dart';
 import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
@@ -28,9 +30,12 @@ Future<void> init() async {
     () => CustomOdooKv(),
   );
 
-  // Odoo Client - usando implementación estándar
+  // Odoo Client - usando factory con conditional imports
   getIt.registerLazySingleton<OdooClient>(
-    () => OdooClient(AppConstants.odooServerURL),
+    () {
+      print('🔧 Creando OdooClient usando factory');
+      return OdooClientFactory.create(AppConstants.odooServerURL);
+    },
   );
 
   // Odoo Environment - Debe registrarse antes que OdooCallQueue
@@ -253,10 +258,10 @@ Future<void> logout() async {
       print('🗑️ OdooClient desregistrado');
     }
     
-    // Recrear cliente sin sesión (limpio)
+    // Recrear cliente sin sesión (limpio) usando factory
     print('🔄 Recreando cliente limpio...');
     getIt.registerLazySingleton<OdooClient>(
-      () => OdooClient(AppConstants.odooServerURL),
+      () => OdooClientFactory.create(AppConstants.odooServerURL),
     );
     
     print('✅ Logout completado exitosamente');
@@ -353,6 +358,19 @@ Future<void> _setupRepositories() async {
   }
 }
 
+/// A simple [http.Client] wrapper that adds a session cookie to every request.
+class _ClientWithCookie extends http.BaseClient {
+  final http.Client _inner;
+  final String _sessionId;
+
+  _ClientWithCookie(this._inner, this._sessionId);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers['Cookie'] = 'session_id=$_sessionId';
+    return _inner.send(request);
+  }
+}
 
 /// Verifica si existe una sesión válida guardada
 Future<bool> checkExistingSession() async {
@@ -371,7 +389,20 @@ Future<bool> checkExistingSession() async {
       if (session.id.isNotEmpty) {
         print('✅ Sesión válida recuperada para user: ${session.userName}');
 
-        // No recrear el cliente; solo reconfigurar entorno/repos si es necesario
+        // Replace the existing OdooClient with a new one that has our session cookie.
+        // This is the correct way to restore state without a public session setter.
+        if (getIt.isRegistered<OdooClient>()) {
+          getIt.unregister<OdooClient>();
+        }
+        final authenticatedHttpClient =
+            _ClientWithCookie(http.Client(), session.id);
+        final odooClient = OdooClient(
+          AppConstants.odooServerURL,
+          httpClient: authenticatedHttpClient,
+        );
+        getIt.registerSingleton<OdooClient>(odooClient);
+
+        // Recrear environment y repositories que dependen del cliente autenticado
         await _recreateOdooEnvironment();
         await _setupRepositories();
 
@@ -400,13 +431,25 @@ Future<void> _recreateClientWithSession(OdooSession session) async {
       print('🗑️ OdooClient anterior desregistrado');
     }
     
-    // Crear una nueva instancia de OdooClient
-    final odooClient = OdooClient(AppConstants.odooServerURL);
+    // IMPORTANTE: En lugar de intentar asignar sessionId manualmente,
+    // el problema puede estar en que el cliente no está usando las cookies correctamente
+    // Vamos a crear un cliente nuevo y verificar que mantenga la sesión
+    getIt.registerLazySingleton<OdooClient>(
+      () {
+        final client = OdooClientFactory.create(AppConstants.odooServerURL);
+        print('✅ Cliente recreado - Verificando sesión...');
+        print('🔍 Cliente sessionId después de recrear: ${client.sessionId?.id}');
+        return client;
+      },
+    );
     
-    // Registrar la nueva instancia como un singleton
-    getIt.registerSingleton<OdooClient>(odooClient);
+    // Verificar que el cliente tenga la sesión correcta
+    final newClient = getIt<OdooClient>();
+    print('🔍 Verificación final:');
+    print('   - Nuevo cliente sessionId: ${newClient.sessionId?.id}');
+    print('   - Sesión esperada: ${session.id}');
     
-    print('✅ OdooClient recreado exitosamente con sesión inyectada.');
+    print('✅ OdooClient recreado exitosamente');
   } catch (e) {
     print('❌ Error recreando OdooClient: $e');
     rethrow;
@@ -505,7 +548,7 @@ Future<bool> _handleAuthenticateResponse(
       print('   - Las cookies se enviarán en todas las requests posteriores');
     }
     
-    // No recrear el cliente para conservar la sesión
+    // Recrear environment y repositories con el cliente actualizado
     await _recreateOdooEnvironment();
     await _setupRepositories();
     
@@ -577,7 +620,6 @@ void initAuthScope(OdooSession session) {
         getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
   );
 }
-
 
 
 
