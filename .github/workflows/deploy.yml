@@ -24,7 +24,10 @@ jobs:
       run: flutter pub get
       
     - name: Build web
-      run: flutter build web --release
+      run: flutter build web --release --base-href "/odoo_test/"
+    
+    - name: Add 404.html for SPA routing
+      run: cp build/web/index.html build/web/404.html
       
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
@@ -32,3 +35,4 @@ jobs:
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./build/web
+        enable_jekyll: false
