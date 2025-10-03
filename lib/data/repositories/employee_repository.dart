@@ -2,6 +2,7 @@ import 'package:odoo_repository/odoo_repository.dart';
 import '../models/employee_model.dart';
 import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
+import 'package:odoo_rpc/odoo_rpc.dart';
 
 /// Repository para manejar operaciones con Employees en Odoo con soporte offline
 class EmployeeRepository extends OfflineOdooRepository<Employee> {
@@ -40,6 +41,38 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
   Future<List<Employee>> getActiveEmployees() async {
     await fetchRecords();
     return latestRecords;
+  }
+
+  /// Busca empleado(s) por PIN
+  Future<List<Employee>> findByPin(String pin) async {
+    try {
+      final results = await env.orpc.callKw({
+        'model': modelName,
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['pin', '=', pin]
+          ],
+          'fields': oFields,
+          'limit': 5,
+        },
+      });
+      final list = (results as List).map((e) => fromJson(e)).toList();
+      return list;
+    } catch (e) {
+      print('❌ EMPLOYEE_REPO: Error findByPin: $e');
+      return [];
+    }
+  }
+
+  /// Valida el PIN de empleado y retorna el empleado si es único
+  Future<Employee?> validatePin(String pin) async {
+    final matches = await findByPin(pin);
+    if (matches.isEmpty) return null;
+    if (matches.length == 1) return matches.first;
+    // Si hay múltiples, el caller debe resolver desambiguación
+    return null;
   }
 
   /// Obtiene empleados por departamento

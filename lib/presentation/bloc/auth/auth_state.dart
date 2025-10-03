@@ -42,3 +42,19 @@ class AuthError extends AuthState {
   @override
   List<Object> get props => [message, details ?? ''];
 }
+
+/// Estado cuando la licencia fue validada y se configuró la conexión
+class AuthLicenseValidated extends AuthState {
+  final String licenseNumber;
+  final String? serverUrl;
+  final String? database;
+
+  const AuthLicenseValidated({
+    required this.licenseNumber,
+    this.serverUrl,
+    this.database,
+  });
+
+  @override
+  List<Object> get props => [licenseNumber, serverUrl ?? '', database ?? ''];
+}

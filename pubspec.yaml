@@ -38,6 +38,7 @@ dependencies:
   # Odoo
   odoo_rpc: ^0.7.1
   odoo_repository: ^0.6.0
+  http: ^1.2.1
 
   # State Management
   flutter_bloc: ^8.1.3

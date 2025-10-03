@@ -25,6 +25,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
   SaleOrder? _currentOrder;
   List<SaleOrderLine> _orderLines = [];
   bool _isEditing = false;
+  bool _auditInfoExpanded = false; // Estado para auditoría desplegable
 
   @override
   void initState() {
@@ -211,6 +212,8 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
               Text('Cliente: ${_currentOrder!.partnerName}'),
             Text('Fecha: ${_formatDate(_currentOrder!.dateOrder)}'),
             Text('Total: \$${_currentOrder!.amountTotal.toStringAsFixed(2)}'),
+            const SizedBox(height: 8),
+            _buildExpandableAuditInfo(),
           ],
         ),
       ),
@@ -495,6 +498,218 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     setState(() {
       _orderLines.removeAt(index);
     });
+  }
+
+  /// Construye widget de información de auditoría desplegable
+  Widget _buildExpandableAuditInfo() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Botón desplegable
+          InkWell(
+            onTap: () {
+              setState(() {
+                _auditInfoExpanded = !_auditInfoExpanded;
+              });
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(
+                    _auditInfoExpanded ? Icons.info : Icons.info_outline,
+                    size: 16,
+                    color: _auditInfoExpanded ? Colors.blue : Colors.grey[600],
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '+ info',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: _auditInfoExpanded ? Colors.blue : Colors.grey[700],
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _auditInfoExpanded ? 'Ocultar' : 'Ver detalles',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _auditInfoExpanded 
+                        ? Icons.keyboard_arrow_up 
+                        : Icons.keyboard_arrow_down,
+                    color: Colors.grey[600],
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Contenido desplegable
+          if (_auditInfoExpanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: _buildAuditContent(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Construye el contenido de auditoría
+  Widget _buildAuditContent() {
+    return Column(
+      children: [
+        // Usuario responsable de la operación
+        if (_currentOrder!.userName != null) ...[
+          _buildAuditRow(
+            icon: Icons.person,
+            label: 'Usuario Responsable:',
+            value: _currentOrder!.userName!,
+          ),
+          const SizedBox(height: 6),
+        ],
+        
+        // Información de creación
+        _buildAuditRow(
+          icon: Icons.add_circle_outline,
+          label: 'Creado por:',
+          value: _currentOrder!.createUserName ?? 'Usuario ${_currentOrder!.createUid}',
+          dateColor: Colors.green,
+          timestamp: _currentOrder!.createDate,
+        ),
+        const SizedBox(height: 6),
+        
+        // Información de última modificación
+        if (_currentOrder!.writeUid != null && _currentOrder!.writeDate != null) ...[
+          _buildAuditRow(
+            icon: Icons.edit_outlined,
+            label: 'Última modificación:',
+            value: _currentOrder!.writeUserName ?? 'Usuario ${_currentOrder!.writeUid}',
+            dateColor: Colors.orange,
+            timestamp: _currentOrder!.writeDate!,
+          ),
+          const SizedBox(height: 6),
+        ],
+        
+        // Estado actual
+        _buildAuditRow(
+          icon: Icons.info_outline,
+          label: 'Estado actual:',
+          value: _getStateDescription(_currentOrder!.state),
+          dateColor: _getStateColor(_currentOrder!.state),
+        ),
+      ],
+    );
+  }
+
+  /// Construye una fila de información de auditoría
+  Widget _buildAuditRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? dateColor,
+    String? timestamp,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey[600]),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: Theme.of(context).textTheme.bodySmall,
+              children: [
+                TextSpan(
+                  text: '$label ',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                TextSpan(
+                  text: value,
+                  style: TextStyle(
+                    color: dateColor ?? Colors.grey[800],
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (timestamp != null) ...[
+                  TextSpan(text: '\nActualizado: '),
+                  TextSpan(
+                    text: _formatDateTime(timestamp),
+                    style: TextStyle(
+                      color: dateColor ?? Colors.grey[700],
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Obtiene descripción del estado en español
+  String _getStateDescription(String state) {
+    switch (state) {
+      case 'draft':
+        return 'Borrador';
+      case 'sent':
+        return 'Cotización Enviada';
+      case 'sale':
+        return 'Confirmada';
+      case 'done':
+        return 'Entregada';
+      case 'cancel':
+        return 'Cancelada';
+      default:
+        return state.toUpperCase();
+    }
+  }
+
+  /// Obtiene color según el estado
+  Color _getStateColor(String state) {
+    switch (state) {
+      case 'draft':
+        return Colors.orange;
+      case 'sent':
+        return Colors.blue;
+      case 'sale':
+        return Colors.green;
+      case 'done':
+        return Colors.green[700]!;
+      case 'cancel':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  /// Formatea fecha y hora para auditoría
+  String _formatDateTime(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return dateString.length > 10 ? dateString.substring(0, 10) : dateString;
+    }
   }
 
   String _formatDate(String dateString) {

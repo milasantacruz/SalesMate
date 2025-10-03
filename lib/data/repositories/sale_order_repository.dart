@@ -6,6 +6,7 @@ import '../models/order_totals_model.dart';
 import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
 import '../../core/di/injection_container.dart';
+import '../../core/audit/audit_helper.dart';
 
 /// Repository para manejar operaciones con Sale Orders en Odoo con soporte offline
 class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
@@ -81,6 +82,42 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       print('❌ SALE_ORDER_REPO: Error type: ${e.runtimeType}');
       rethrow;
     }
+  }
+
+  /// Enriquecer datos de orden para creación con auditoría automática
+  Future<Map<String, dynamic>> _enrichOrderDataForCreate(Map<String, dynamic> originalData) async {
+    final enrichedData = Map<String, dynamic>.from(originalData);
+    
+    // Inyectar datos de auditoría automático
+    final auditData = AuditHelper.getCreateAuditData();
+    enrichedData.addAll(auditData);
+    
+    print('🔍 SALE_ORDER_REPO: Datos de auditoría incluidos: $auditData');
+    
+    // Inyectar pricelist_id si no viene, usando el partner
+    if (!enrichedData.containsKey('pricelist_id') && enrichedData['partner_id'] != null) {
+      final partnerId = (enrichedData['partner_id'] as num).toInt();
+      final pricelistId = await _getPartnerPricelistId(partnerId);
+      if (pricelistId != null) {
+        enrichedData['pricelist_id'] = pricelistId;
+        print('🧮 SALE_ORDER_REPO: Inyectado pricelist_id=$pricelistId para partner $partnerId');
+      }
+    }
+    
+    return enrichedData;
+  }
+
+  /// Enriquecer datos de orden para actualización con auditoría automática
+  Map<String, dynamic> _enrichOrderDataForWrite(Map<String, dynamic> originalData) {
+    final enrichedData = Map<String, dynamic>.from(originalData);
+    
+    // Inyectar datos de auditoría automático
+    final auditData = AuditHelper.getWriteAuditData();
+    enrichedData.addAll(auditData);
+    
+    print('🔍 SALE_ORDER_REPO: Datos de auditoría para actualización: $auditData');
+    
+    return enrichedData;
   }
 
   /// Construye el dominio de búsqueda basado en filtros
@@ -205,26 +242,18 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   Future<Map<String, dynamic>> createSaleOrder(Map<String, dynamic> orderData) async {
     try {
       print('🛒 SALE_ORDER_REPO: Creando nueva orden de venta...');
-      // Log explícito del cuerpo de la petición
+      print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER', details: 'Creating new order'));
       print('🔵 REQUEST BODY CREATE SALE ORDER (antes de enriquecer): $orderData');
 
-      // Inyectar pricelist_id si no viene, usando el partner
-      if (!orderData.containsKey('pricelist_id') && orderData['partner_id'] != null) {
-        final partnerId = (orderData['partner_id'] as num).toInt();
-        final pricelistId = await _getPartnerPricelistId(partnerId);
-        if (pricelistId != null) {
-          orderData = Map<String, dynamic>.from(orderData);
-          orderData['pricelist_id'] = pricelistId;
-          print('🧮 SALE_ORDER_REPO: Inyectado pricelist_id=$pricelistId para partner $partnerId');
-        }
-      }
-
-      print('🔵 REQUEST BODY CREATE SALE ORDER (final): $orderData');
+      // Enriquecer datos con auditoría y pricelist
+      final enrichedData = await _enrichOrderDataForCreate(orderData);
+      
+      print('🔵 REQUEST BODY CREATE SALE ORDER (final): $enrichedData');
 
       final response = await env.orpc.callKw({
         'model': modelName,
         'method': 'create',
-        'args': [orderData],
+        'args': [enrichedData],
         'kwargs': {},
       });
 
@@ -268,6 +297,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   Future<bool> sendQuotation(int orderId) async {
     try {
       print('📧 SALE_ORDER_REPO: Enviando cotización $orderId...');
+      print(AuditHelper.formatAuditLog('SEND_QUOTATION', details: 'Order ID: $orderId'));
       print('📧 SALE_ORDER_REPO: Estado actual antes de envío - obtieniendo datos...');
 
       // Verificar estado actual antes del envío
@@ -357,6 +387,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   Future<bool> updateOrderState(int orderId, String newState) async {
     try {
       print('🛒 SALE_ORDER_REPO: Actualizando estado de orden $orderId a $newState');
+      print(AuditHelper.formatAuditLog('UPDATE_ORDER_STATE', details: 'Order ID: $orderId, New State: $newState'));
 
       if (newState == 'sale') {
         // Para confirmar orden, usar método específico
@@ -690,14 +721,18 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   Future<bool> updateOrder(int orderId, Map<String, dynamic> orderData) async {
     try {
       print('🛒 SALE_ORDER_REPO: Actualizando orden $orderId...');
-      print('🛒 SALE_ORDER_REPO: Order data: $orderData');
+      print('🛒 SALE_ORDER_REPO: Order data original: $orderData');
+      
+      // Enriquecer datos con auditoría
+      final enrichedData = _enrichOrderDataForWrite(orderData);
+      print('🛒 SALE_REPO: Order data enriquecida: $enrichedData');
       
       // Si se está intentando cambiar el estado a 'sale', usar action_confirm
-      if (orderData['state'] == 'sale') {
+      if (enrichedData['state'] == 'sale') {
         print('🛒 SALE_ORDER_REPO: Cambiando estado a sale, usando action_confirm...');
         
         // Primero actualizar otros campos si los hay (sin state)
-        final otherData = Map<String, dynamic>.from(orderData);
+        final otherData = Map<String, dynamic>.from(enrichedData);
         otherData.remove('state');
         
         if (otherData.isNotEmpty) {
@@ -719,11 +754,11 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         
         print('✅ SALE_ORDER_REPO: Orden $orderId confirmada exitosamente');
       } else {
-        // Para otros cambios, usar write normal
+        // Para otros cambios, usar write normal con datos enriquecidos
         await env.orpc.callKw({
           'model': modelName,
           'method': 'write',
-          'args': [[orderId], orderData],
+          'args': [[orderId], enrichedData],
         });
         
         print('✅ SALE_ORDER_REPO: Orden $orderId actualizada');

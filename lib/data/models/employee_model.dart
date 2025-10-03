@@ -6,6 +6,9 @@ class Employee extends Equatable implements OdooRecord {
   const Employee({
     required this.id,
     required this.name,
+    this.pin,
+    this.userId,
+    this.userName,
     this.workEmail,
     this.workPhone,
     this.jobTitle,
@@ -20,6 +23,9 @@ class Employee extends Equatable implements OdooRecord {
   @override
   final int id;
   final String name;
+  final String? pin;
+  final int? userId;
+  final String? userName;
   final String? workEmail;
   final String? workPhone;
   final String? jobTitle;
@@ -53,6 +59,9 @@ class Employee extends Equatable implements OdooRecord {
     return Employee(
       id: json['id'] as int,
       name: json['name'] is String ? json['name'] : '',
+      pin: json['pin'] is String ? json['pin'] : null,
+      userId: parseMany2oneId(json['user_id']),
+      userName: parseMany2oneName(json['user_id']),
       workEmail: json['work_email'] is String ? json['work_email'] : null,
       workPhone: json['work_phone'] is String ? json['work_phone'] : null,
       jobTitle: json['job_title'] is String ? json['job_title'] : null,
@@ -87,6 +96,9 @@ class Employee extends Equatable implements OdooRecord {
   List<Object?> get props => [
         id,
         name,
+        pin,
+        userId,
+        userName,
         workEmail,
         workPhone,
         jobTitle,
@@ -102,6 +114,8 @@ class Employee extends Equatable implements OdooRecord {
   static List<String> get oFields => [
         'id',
         'name',
+        'pin',
+        'user_id',
         'work_email',
         'work_phone',
         'job_title',

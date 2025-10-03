@@ -23,6 +23,8 @@ import 'presentation/bloc/employee/employee_event.dart';
 import 'presentation/pages/home_page.dart';
 import 'presentation/pages/login_page.dart';
 import 'presentation/pages/splash_page.dart';
+import 'presentation/pages/license_page.dart';
+import 'presentation/pages/pin_login_page.dart';
 import "presentation/theme.dart";
 
 void main() async {
@@ -86,6 +88,12 @@ class MyApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             theme: AppTheme.light,
             home: const AuthWrapper(),
+            routes: {
+              '/license': (context) => const LicenseValidationPage(),
+              '/pin-login': (context) => const PinLoginPage(),
+              '/home': (context) => const HomePage(),
+              '/login': (context) => const LoginPage(),
+            },
           ),
         );
       },
@@ -105,10 +113,15 @@ class AuthWrapper extends StatelessWidget {
           return const SplashPage();
         } else if (state is AuthAuthenticated) {
           return const HomePage();
+        } else if (state is AuthLicenseValidated) {
+          // Después de validar licencia, ir a PIN login
+          return const PinLoginPage();
         } else if (state is AuthError) {
-          return LoginPage(errorMessage: state.message);
+          // Si hay error, volver a licencia con mensaje
+          return const LicenseValidationPage();
         } else {
-          return const LoginPage();
+          // Estado inicial: mostrar pantalla de licencia
+          return const LicenseValidationPage();
         }
       },
     );

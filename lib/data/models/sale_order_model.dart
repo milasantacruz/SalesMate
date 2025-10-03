@@ -13,6 +13,16 @@ class SaleOrder extends Equatable implements OdooRecord {
   final String state;
   final List<int> orderLineIds;
   final List<SaleOrderLine> orderLines;
+  
+  // Campos de auditoría automáticos de Odoo
+  final int? userId;
+  final String? userName;
+  final int createUid;
+  final String? createUserName;
+  final String createDate;
+  final int? writeUid;
+  final String? writeUserName;
+  final String? writeDate;
 
   const SaleOrder({
     required this.id,
@@ -24,23 +34,47 @@ class SaleOrder extends Equatable implements OdooRecord {
     required this.state,
     required this.orderLineIds,
     this.orderLines = const [],
+    this.userId,
+    this.userName,
+    required this.createUid,
+    this.createUserName,
+    required this.createDate,
+    this.writeUid,
+    this.writeUserName,
+    this.writeDate,
   });
 
   /// Crea una SaleOrder desde JSON
   factory SaleOrder.fromJson(Map<String, dynamic> json) {
     // Helper robusto para parsear campos de relación (Many2one)
     int? parseMany2oneId(dynamic value) {
+      if (value == null || value == false) return null;
       if (value is List && value.isNotEmpty) {
-        return value[0] as int?;
+        try {
+          return (value[0] as num?)?.toInt();
+        } catch (e) {
+          print('⚠️ SALE_ORDER_MODEL: Error parseando ID Many2one: $value');
+          return null;
+        }
       }
+      if (value is num) return value.toInt();
       return null;
     }
 
     String? parseMany2oneName(dynamic value) {
-      if (value is List && value.length > 1) {
+      if (value == null || value == false) return null;
+      if (value is List && value.length > 1 ) {
         return value[1] as String?;
       }
       return null;
+    }
+
+    // Log de debug para campos de auditoría
+    if (json.containsKey('create_uid')) {
+      print('🔍 SALE_ORDER_MODEL: create_uid raw value: ${json['create_uid']} (type: ${json['create_uid'].runtimeType})');
+      print('🔍 SALE_ORDER_MODEL: create_date raw value: ${json['create_date']} (type: ${json['create_date'].runtimeType})');
+      print('🔍 SALE_ORDER_MODEL: write_uid raw value: ${json['write_uid']} (type: ${json['write_uid'].runtimeType})');
+      print('🔍 SALE_ORDER_MODEL: user_id raw value: ${json['user_id']} (type: ${json['user_id'].runtimeType})');
     }
 
     return SaleOrder(
@@ -56,6 +90,17 @@ class SaleOrder extends Equatable implements OdooRecord {
               .toList() ??
           [],
       orderLines: const [],
+      // Campos de auditoría
+      userId: parseMany2oneId(json['user_id']),
+      userName: parseMany2oneName(json['user_id']),
+      createUid: parseMany2oneId(json['create_uid']) ?? 0,
+      createUserName: parseMany2oneName(json['create_uid']),
+      createDate: json['create_date'] is String ? json['create_date'] : 
+                   json['create_date'] is DateTime ? json['create_date'].toString() : '',
+      writeUid: parseMany2oneId(json['write_uid']),
+      writeUserName: parseMany2oneName(json['write_uid']),
+      writeDate: json['write_date'] is String ? json['write_date'] : 
+                 json['write_date'] is DateTime ? json['write_date'].toString() : null,
     );
   }
 
@@ -69,6 +114,12 @@ class SaleOrder extends Equatable implements OdooRecord {
       'amount_total': amountTotal,
       'state': state,
       'order_line': orderLineIds,
+      // Campos de auditoría
+      'user_id': userId != null ? [userId, userName] : false,
+      'create_uid': createUid,
+      'create_date': createDate,
+      'write_uid': writeUid,
+      'write_date': writeDate,
     };
   }
 
@@ -82,6 +133,14 @@ class SaleOrder extends Equatable implements OdooRecord {
     String? state,
     List<int>? orderLineIds,
     List<SaleOrderLine>? orderLines,
+    int? userId,
+    String? userName,
+    int? createUid,
+    String? createUserName,
+    String? createDate,
+    int? writeUid,
+    String? writeUserName,
+    String? writeDate,
   }) {
     return SaleOrder(
       id: id ?? this.id,
@@ -93,6 +152,14 @@ class SaleOrder extends Equatable implements OdooRecord {
       state: state ?? this.state,
       orderLineIds: orderLineIds ?? this.orderLineIds,
       orderLines: orderLines ?? this.orderLines,
+      userId: userId ?? this.userId,
+      userName: userName ?? this.userName,
+      createUid: createUid ?? this.createUid,
+      createUserName: createUserName ?? this.createUserName,
+      createDate: createDate ?? this.createDate,
+      writeUid: writeUid ?? this.writeUid,
+      writeUserName: writeUserName ?? this.writeUserName,
+      writeDate: writeDate ?? this.writeDate,
     );
   }
 
@@ -117,6 +184,12 @@ class SaleOrder extends Equatable implements OdooRecord {
         'amount_total',
         'state',
         'order_line',
+        // Campos de auditoría automáticos
+        'user_id',
+        'create_uid',
+        'create_date',
+        'write_uid',
+        'write_date',
       ];
 
   @override
@@ -130,6 +203,14 @@ class SaleOrder extends Equatable implements OdooRecord {
         state,
         orderLineIds,
         orderLines,
+        userId,
+        userName,
+        createUid,
+        createUserName,
+        createDate,
+        writeUid,
+        writeUserName,
+        writeDate,
       ];
 }
 
