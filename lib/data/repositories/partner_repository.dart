@@ -6,7 +6,10 @@ import '../../core/network/network_connectivity.dart';
 /// Repository para manejar operaciones con Partners en Odoo con soporte offline
 class PartnerRepository extends OfflineOdooRepository<Partner> {
   final String modelName = 'res.partner';
-  List<dynamic> get oDomain => [['active', '=', true]];
+  List<dynamic> get oDomain => [
+    ['active', '=', true],
+    ['type', '=', 'contact'],
+  ];
 
   PartnerRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
       : super(env, netConn, cache);
@@ -19,6 +22,8 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
 
   @override
   Future<List<dynamic>> searchRead() async {
+    print('📋 PARTNER_REPO: Buscando partners con domain: $oDomain');
+    
     final response = await env.orpc.callKw({
       'model': modelName,
       'method': 'search_read',
@@ -29,10 +34,14 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
         'fields': oFields,
         'limit': 80,
         'offset': 0,
-        'order': ''
+        'order': 'name'
       },
     });
-    return response as List<dynamic>;
+    
+    final records = response as List<dynamic>;
+    print('📋 PARTNER_REPO: ${records.length} contactos activos encontrados');
+    
+    return records;
   }
 
 

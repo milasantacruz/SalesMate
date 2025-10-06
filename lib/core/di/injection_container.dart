@@ -68,23 +68,44 @@ Future<bool> loginWithCredentials({
   String? database,
 }) async {
   try {
-    final client = getIt<OdooClient>();
+    var client = getIt<OdooClient>();
     final cache = getIt<CustomOdooKv>();
     
     print('🔐 Intentando login con credenciales dinámicas...');
-    print('📡 URL: ${serverUrl ?? AppConstants.odooServerURL}');
+    print('📡 URL solicitada: ${serverUrl ?? AppConstants.odooServerURL}');
     print('🗄️ DB: ${database ?? AppConstants.odooDbName}');
     print('👤 Usuario: $username');
-    print('🔍 useCorsProxy: ${AppConstants.useCorsProxy}');
-    print('🔍 Cliente base URL: ${client.baseURL}');
+    print('🔍 Cliente base URL ANTES: ${client.baseURL}');
+    
+    // SI la URL del servidor cambió, recrear el cliente
+    final targetUrl = serverUrl ?? AppConstants.odooServerURL;
+    if (client.baseURL != targetUrl) {
+      print('🔄 URL cambió, recreando OdooClient...');
+      print('   Anterior: ${client.baseURL}');
+      print('   Nueva: $targetUrl');
+      
+      // Desregistrar el cliente anterior
+      if (getIt.isRegistered<OdooClient>()) {
+        await getIt.unregister<OdooClient>();
+      }
+      
+      // Crear y registrar nuevo cliente con la URL correcta
+      final newClient = OdooClientFactory.create(targetUrl);
+      getIt.registerLazySingleton<OdooClient>(() => newClient);
+      client = newClient;
+      
+      print('✅ Nuevo cliente creado con URL: ${client.baseURL}');
+    }
+    
+    print('🔍 Cliente base URL DESPUÉS: ${client.baseURL}');
     print('🔍 Cliente HTTP type: ${client.httpClient.runtimeType}');
     print('🔍 Cliente isWebPlatform: ${client.isWebPlatform}');
     
     // ANDROID DEBUG: Información adicional
     print('🤖 ANDROID DEBUG - Información del entorno:');
-    print('   - Servidor real: ${AppConstants.odooServerURL}');
-    print('   - Database real: ${AppConstants.odooDbName}');
-    print('   - Usuario real: $username');
+    print('   - Servidor a usar: $targetUrl');
+    print('   - Database: ${database ?? AppConstants.odooDbName}');
+    print('   - Usuario: $username');
     print('   - Password length: ${password.length}');
     
     // Usar authenticate con parámetros dinámicos
