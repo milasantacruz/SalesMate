@@ -109,6 +109,8 @@ class AuthWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<AuthBloc, AuthState>(
       builder: (context, state) {
+        print('🏠 AUTH_WRAPPER: Estado actual: ${state.runtimeType}');
+        
         if (state is AuthLoading) {
           return const SplashPage();
         } else if (state is AuthAuthenticated) {
@@ -116,11 +118,12 @@ class AuthWrapper extends StatelessWidget {
         } else if (state is AuthLicenseValidated) {
           // Después de validar licencia, ir a PIN login
           return const PinLoginPage();
-        } else if (state is AuthError) {
-          // Si hay error, volver a licencia con mensaje
+        } else if (state is AuthError || state is AuthUnauthenticated || state is AuthInitial) {
+          // Si hay error, no autenticado, o estado inicial → mostrar licencia
+          // El error se mostrará dentro de LicenseValidationPage
           return const LicenseValidationPage();
         } else {
-          // Estado inicial: mostrar pantalla de licencia
+          // Fallback: mostrar pantalla de licencia
           return const LicenseValidationPage();
         }
       },

@@ -18,6 +18,22 @@ class _LicenseValidationPageState extends State<LicenseValidationPage> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    // Verificar si hay un error al inicializar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final currentState = context.read<AuthBloc>().state;
+      print('📱 LICENSE_PAGE: initState - Estado actual: ${currentState.runtimeType}');
+      if (currentState is AuthError) {
+        setState(() {
+          _errorMessage = currentState.message;
+        });
+        print('📱 LICENSE_PAGE: Error detectado en initState: ${currentState.message}');
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _licenseController.dispose();
     super.dispose();
@@ -33,15 +49,55 @@ class _LicenseValidationPageState extends State<LicenseValidationPage> {
       ),
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) {
-          if (state is AuthLicenseValidated) {
-            _isLoading = false;
+          print('📱 LICENSE_PAGE: Estado recibido: ${state.runtimeType}');
+          
+          if (state is AuthLoading) {
+            setState(() {
+              _isLoading = true;
+              _errorMessage = null;
+            });
+          } else if (state is AuthLicenseValidated) {
+            setState(() {
+              _isLoading = false;
+              _errorMessage = null;
+            });
+            print('✅ LICENSE_PAGE: Licencia validada, navegando a PIN login');
             // Navegar a la pantalla de PIN login
             Navigator.of(context).pushReplacementNamed('/pin-login');
           } else if (state is AuthError) {
+            print('❌ LICENSE_PAGE: Error recibido: ${state.message}');
             setState(() {
               _isLoading = false;
               _errorMessage = state.message;
             });
+            
+            // Mostrar SnackBar adicional para errores críticos
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        state.message,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.red[700],
+                duration: const Duration(seconds: 8),
+                behavior: SnackBarBehavior.floating,
+                action: SnackBarAction(
+                  label: 'Cerrar',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  },
+                ),
+              ),
+            );
           }
         },
         child: Padding(
@@ -130,20 +186,41 @@ class _LicenseValidationPageState extends State<LicenseValidationPage> {
                 // Mensaje de error
                 if (_errorMessage != null) ...[
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.red[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red[200]!),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red[300]!, width: 1.5),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.red),
-                        const SizedBox(width: 8),
-                        Expanded(
+                        Row(
+                          children: [
+                            Icon(Icons.error_outline, color: Colors.red[700], size: 24),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Error de Validación',
+                                style: TextStyle(
+                                  color: Colors.red[900],
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 36),
                           child: Text(
                             _errorMessage!,
-                            style: const TextStyle(color: Colors.red),
+                            style: TextStyle(
+                              color: Colors.red[800],
+                              fontSize: 14,
+                              height: 1.4,
+                            ),
                           ),
                         ),
                       ],

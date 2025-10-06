@@ -178,10 +178,15 @@ class EmployeePinLoginRequested extends AuthEvent {
       // Autenticar con Odoo usando las credenciales de la licencia
       if (info.serverUrl != null && info.database != null && 
           info.username != null && info.password != null) {
+        print('🔐 AUTH_BLOC: ═══════════════════════════════════════════════');
         print('🔐 AUTH_BLOC: Iniciando autenticación con Odoo...');
+        print('🔐 AUTH_BLOC: ═══════════════════════════════════════════════');
+        print('🔐 AUTH_BLOC: Licencia: ${info.licenseNumber}');
         print('🔐 AUTH_BLOC: Server: ${info.serverUrl}');
         print('🔐 AUTH_BLOC: Database: ${info.database}');
         print('🔐 AUTH_BLOC: Username: ${info.username}');
+        print('🔐 AUTH_BLOC: Password: ${info.password?.substring(0, 2)}***');
+        print('🔐 AUTH_BLOC: ═══════════════════════════════════════════════');
         
         try {
           final loginSuccess = await loginWithCredentials(
@@ -192,15 +197,41 @@ class EmployeePinLoginRequested extends AuthEvent {
           );
           
           if (!loginSuccess) {
-            print('❌ AUTH_BLOC: Autenticación con Odoo falló');
-            emit(AuthError('Error autenticando con servidor Odoo'));
+            print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+            print('❌ AUTH_BLOC: AUTENTICACIÓN FALLÓ');
+            print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+            print('❌ AUTH_BLOC: Posibles causas:');
+            print('❌ AUTH_BLOC: 1. Credenciales incorrectas para esta instancia');
+            print('❌ AUTH_BLOC: 2. Usuario bloqueado o sin permisos');
+            print('❌ AUTH_BLOC: 3. Base de datos incorrecta o no existe');
+            print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+            final errorMsg = 'Credenciales inválidas para la base de datos "${info.database}".\n\nVerifica que el usuario y contraseña sean correctos para esta instancia de Odoo.';
+            print('🔴 AUTH_BLOC: ⚠️ EMITIENDO AuthError: $errorMsg');
+            emit(AuthError(errorMsg));
+            print('🔴 AUTH_BLOC: ✅ AuthError EMITIDO, retornando...');
             return;
           }
           
           print('✅ AUTH_BLOC: Autenticación con Odoo exitosa');
         } catch (e) {
-          print('❌ AUTH_BLOC: Error en autenticación Odoo: $e');
-          emit(AuthError('Error conectando con servidor Odoo: $e'));
+          print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+          print('❌ AUTH_BLOC: EXCEPCIÓN EN AUTENTICACIÓN');
+          print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+          print('❌ AUTH_BLOC: Error: $e');
+          print('❌ AUTH_BLOC: Tipo: ${e.runtimeType}');
+          
+          // Extraer mensaje específico si es OdooException
+          String errorMsg = 'Error conectando con servidor Odoo';
+          if (e.toString().contains('AccessError')) {
+            errorMsg = 'Acceso denegado: Las credenciales no son válidas para la base de datos "${info.database}".\n\nContacta al administrador del sistema.';
+          } else if (e.toString().contains('database')) {
+            errorMsg = 'La base de datos "${info.database}" no existe o no está disponible.';
+          }
+          
+          print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+          print('🔴 AUTH_BLOC: ⚠️ EMITIENDO AuthError (desde catch): $errorMsg');
+          emit(AuthError(errorMsg));
+          print('🔴 AUTH_BLOC: ✅ AuthError EMITIDO (desde catch), retornando...');
           return;
         }
       }

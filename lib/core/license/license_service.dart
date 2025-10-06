@@ -21,6 +21,8 @@ class LicenseInfo {
   });
 
   factory LicenseInfo.fromWebhook(Map<String, dynamic> json) {
+    print('🔍 LICENSE_INFO: Parseando respuesta del webhook...');
+    
     final license = json['license'] as Map<String, dynamic>?;
     final connections = (json['connections'] as List?) ?? const [];
     String? serverUrl;
@@ -28,16 +30,27 @@ class LicenseInfo {
     String? username;
     String? password;
 
+    print('🔍 LICENSE_INFO: Número de conexiones: ${connections.length}');
+    
     if (connections.isNotEmpty) {
       final conn = connections.first as Map<String, dynamic>;
       final fieldValues = (conn['fieldValues'] as Map<String, dynamic>?) ?? {};
+      
+      print('🔍 LICENSE_INFO: fieldValues completos: $fieldValues');
+      
       serverUrl = fieldValues['host'] as String?;
       database = fieldValues['nombre_bd'] as String?;
       username = fieldValues['usuario'] as String?;
       password = fieldValues['contrasena'] as String?;
+      
+      print('🔍 LICENSE_INFO: Valores extraídos:');
+      print('   - host: $serverUrl');
+      print('   - nombre_bd: $database');
+      print('   - usuario: $username');
+      print('   - contrasena: ${password?.substring(0, 2)}*** (${password?.length} chars)');
     }
 
-    return LicenseInfo(
+    final info = LicenseInfo(
       success: (json['success'] as bool?) ?? false,
       isActive: (license?['isActive'] as bool?) ?? false,
       licenseNumber: (license?['licenseNumber'] as String?) ?? '',
@@ -46,6 +59,9 @@ class LicenseInfo {
       username: username,
       password: password,
     );
+    
+    print('✅ LICENSE_INFO: LicenseInfo creado exitosamente');
+    return info;
   }
 }
 
