@@ -109,6 +109,83 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
     }
   }
 
+  /// Obtiene direcciones de despacho de un partner (commercial_partner_id)
+  Future<List<Partner>> getDeliveryAddresses(int commercialPartnerId) async {
+    try {
+      print('📋 PARTNER_REPO: Obteniendo direcciones de despacho para partner $commercialPartnerId');
+      
+      final response = await env.orpc.callKw({
+        'model': modelName,
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['active', '=', true],
+            ['type', '=', 'delivery'],
+            ['commercial_partner_id', '=', commercialPartnerId]
+          ],
+          'fields': oFields,
+          'order': 'name'
+        }
+      });
+      
+      final records = response as List<dynamic>;
+      final addresses = records.map((record) => Partner.fromJson(record)).toList();
+      
+      print('📋 PARTNER_REPO: ${addresses.length} direcciones de despacho encontradas');
+      return addresses;
+    } catch (e) {
+      print('❌ PARTNER_REPO: Error obteniendo direcciones de despacho: $e');
+      return [];
+    }
+  }
+
+  /// Crea una nueva dirección de despacho
+  Future<Partner?> createDeliveryAddress(Map<String, dynamic> addressData) async {
+    try {
+      print('📋 PARTNER_REPO: Creando nueva dirección de despacho...');
+      print('📋 PARTNER_REPO: Datos: $addressData');
+      
+      // Asegurar que el type es delivery
+      final finalData = {
+        ...addressData,
+        'type': 'delivery',
+        'active': true,
+      };
+      
+      final response = await env.orpc.callKw({
+        'model': modelName,
+        'method': 'create',
+        'args': [finalData],
+        'kwargs': {},
+      });
+      
+      final newId = response as int;
+      print('✅ PARTNER_REPO: Dirección creada con ID: $newId');
+      
+      // Leer la dirección recién creada
+      final readResponse = await env.orpc.callKw({
+        'model': modelName,
+        'method': 'read',
+        'args': [[newId]],
+        'kwargs': {
+          'fields': oFields,
+        },
+      });
+      
+      if (readResponse is List && readResponse.isNotEmpty) {
+        final newAddress = Partner.fromJson(readResponse.first);
+        print('✅ PARTNER_REPO: Dirección leída: ${newAddress.name}');
+        return newAddress;
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ PARTNER_REPO: Error creando dirección: $e');
+      rethrow;
+    }
+  }
+
   /// Dispara la carga de records desde el servidor (con soporte offline)
   Future<void> loadRecords() async {
     print('📋 PARTNER_REPO: Iniciando loadRecords() con soporte offline');

@@ -84,7 +84,7 @@ class MyApp extends StatelessWidget {
             ],
           ],
           child: MaterialApp(
-            title: 'Odoo Test App',
+            title: 'SalesMate',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.light,
             home: const AuthWrapper(),
@@ -107,26 +107,41 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<AuthBloc, AuthState>(
-      builder: (context, state) {
-        print('🏠 AUTH_WRAPPER: Estado actual: ${state.runtimeType}');
-        
-        if (state is AuthLoading) {
-          return const SplashPage();
-        } else if (state is AuthAuthenticated) {
-          return const HomePage();
-        } else if (state is AuthLicenseValidated) {
-          // Después de validar licencia, ir a PIN login
-          return const PinLoginPage();
-        } else if (state is AuthError || state is AuthUnauthenticated || state is AuthInitial) {
-          // Si hay error, no autenticado, o estado inicial → mostrar licencia
-          // El error se mostrará dentro de LicenseValidationPage
-          return const LicenseValidationPage();
-        } else {
-          // Fallback: mostrar pantalla de licencia
-          return const LicenseValidationPage();
+    return BlocListener<AuthBloc, AuthState>(
+      listener: (context, state) {
+        // Mostrar mensaje cuando la sesión expira
+        if (state is AuthUnauthenticated) {
+          print('🚨 AUTH_WRAPPER: Sesión expirada - mostrando mensaje');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sesión expirada. Por favor, inicia sesión nuevamente.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
+            ),
+          );
         }
       },
+      child: BlocBuilder<AuthBloc, AuthState>(
+        builder: (context, state) {
+          print('🏠 AUTH_WRAPPER: Estado actual: ${state.runtimeType}');
+          
+          if (state is AuthLoading) {
+            return const SplashPage();
+          } else if (state is AuthAuthenticated) {
+            return const HomePage();
+          } else if (state is AuthLicenseValidated) {
+            // Después de validar licencia, ir a PIN login
+            return const PinLoginPage();
+          } else if (state is AuthError || state is AuthUnauthenticated || state is AuthInitial) {
+            // Si hay error, no autenticado, o estado inicial → mostrar licencia
+            // El error se mostrará dentro de LicenseValidationPage
+            return const LicenseValidationPage();
+          } else {
+            // Fallback: mostrar pantalla de licencia
+            return const LicenseValidationPage();
+          }
+        },
+      ),
     );
   }
 }

@@ -2,6 +2,8 @@ import 'package:odoo_repository/odoo_repository.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
 
 import '../../core/network/network_connectivity.dart';
+import '../../core/errors/session_expired_handler.dart';
+import '../../core/session/session_ready.dart';
 
 /// Clase base abstracta para repositorios que soportan modo offline.
 ///
@@ -35,6 +37,9 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
   @override
   Future<void> fetchRecords() async {
     try {
+      // Esperar si hay una re-autenticación silenciosa en curso
+      await SessionReadyCoordinator.waitIfReauthenticationInProgress();
+
       if (await netConn.checkNetConn() == netConnState.online) {
         // ONLINE: Obtener datos frescos del servidor
         final recordsJson = await searchRead();
@@ -56,8 +61,15 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
           latestRecords = <T>[];
         }
       }
-    } on OdooException {
-      // Si hay un error de Odoo (ej. sesión expirada), lo relanzamos
+    } on OdooException catch (e) {
+      // Verificar si es sesión expirada y manejarla
+      final wasHandled = await SessionExpiredHandler.handleIfSessionExpired(e);
+      if (wasHandled) {
+        print('🔄 Sesión expirada - relanzando error para que BLoC maneje');
+        // Relanzar el error para que el BLoC emita AuthUnauthenticated
+        rethrow;
+      }
+      // Si es otro tipo de error de Odoo, relanzarlo
       rethrow;
     } catch (_) {
       // Para otros errores (ej. de red), intentamos cargar desde caché como fallback

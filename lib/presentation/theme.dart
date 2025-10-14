@@ -161,6 +161,21 @@ static ThemeData light = FlexThemeData.light(
       backgroundColor: Color.fromARGB(255, 0, 208, 255),
       extendedTextStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
     ),
+     dropdownMenuTheme: DropdownMenuThemeData(
+        textStyle: const TextStyle(
+          fontSize: 14,
+          color: Colors.black87,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+       
+
+      ),
+      
+    
   );
 
   // The FlexColorScheme defined dark mode ThemeData.

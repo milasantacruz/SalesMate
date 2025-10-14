@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:odoo_repository/odoo_repository.dart';
-import 'package:odoo_test/data/models/sale_order_line_model.dart';
+import 'package:odoo_sales_app/data/models/sale_order_line_model.dart';
 
 /// Modelo para representar una Orden de Venta de Odoo (sale.order)
 class SaleOrder extends Equatable implements OdooRecord {

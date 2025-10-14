@@ -37,7 +37,7 @@ class SplashPage extends StatelessWidget {
             
             // Título de la app
             const Text(
-              'Odoo Test App',
+              'SalesMate',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 28,

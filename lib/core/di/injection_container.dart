@@ -9,11 +9,13 @@ import '../network/network_connectivity.dart';
 import '../cache/custom_odoo_kv.dart';
 import '../http/session_interceptor.dart';
 import '../http/odoo_client_factory.dart';
+import '../session/session_ready.dart';
 import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/pricelist_repository.dart';
+import '../../data/repositories/city_repository.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -38,21 +40,8 @@ Future<void> init() async {
     },
   );
 
-  // Odoo Environment - Debe registrarse antes que OdooCallQueue
-  getIt.registerLazySingleton<OdooEnvironment>(
-    () {
-      final client = getIt<OdooClient>();
-      final netConn = getIt<NetworkConnectivity>();
-      final cache = getIt<CustomOdooKv>();
-      
-      return OdooEnvironment(
-        client,
-        AppConstants.odooDbName,
-        cache,
-        netConn,
-      );
-    },
-  );
+  // ⚠️ OdooEnvironment NO se crea aquí porque aún no hay sesión
+  // Se creará después del login exitoso en _recreateOdooEnvironment()
 
   // Odoo Call Queue for offline support - TODO: Implementar cuando esté disponible
   // getIt.registerLazySingleton<OdooCallQueue>(
@@ -194,8 +183,12 @@ Future<bool> loginWithCredentials({
         print('🔍 POSIBLE CAUSA: Timeout de conexión');
         print('   - El servidor no responde a tiempo');
       } else if (e.toString().contains('FormatException')) {
-        print('🔍 POSIBLE CAUSA: Respuesta del servidor inválida');
+        print('🔍 POSIBLE CAUSA: Respuesta del servidor inválida (Error 503/500)');
         print('   - El servidor no está devolviendo JSON válido');
+        print('   - El servidor está caído, en mantenimiento, o con problemas');
+        print('   - Status HTTP probablemente 503 (Service Unavailable) o 500');
+        // Re-lanzar con mensaje más descriptivo
+        throw Exception('Servidor no disponible: El servidor Odoo no está respondiendo correctamente. Puede estar en mantenimiento o experimentando problemas técnicos. Contacta al administrador o intenta más tarde.');
       } else {
         print('🔍 ERROR DESCONOCIDO - Revisar logs completos');
       }
@@ -305,12 +298,17 @@ Future<void> setupOdooEnvironment() async {
 Future<void> _setupRepositories() async {
   try {
     print('🔧 Configurando repositories...');
+    print('🔍 DEBUG: Obteniendo OdooEnvironment de GetIt...');
     
     final env = getIt<OdooEnvironment>();
+    print('✅ DEBUG: OdooEnvironment obtenido correctamente');
     
     // Desregistrar repository anterior si existe
+    print('🔍 DEBUG: Verificando PartnerRepository...');
     if (getIt.isRegistered<PartnerRepository>()) {
+      print('🗑️ DEBUG: Desregistrando PartnerRepository anterior...');
       getIt.unregister<PartnerRepository>();
+      print('✅ DEBUG: PartnerRepository desregistrado');
     }
     
     // Registrar PartnerRepository en GetIt para acceso directo
@@ -477,33 +475,85 @@ Future<void> _recreateClientWithSession(OdooSession session) async {
   }
 }
 
+/// Re-autentica silenciosamente después de que OdooEnvironment destruya la sesión
+Future<void> _reAuthenticateSilently() async {
+  try {
+    final client = getIt<OdooClient>();
+    final cache = getIt<CustomOdooKv>();
+    
+    // Obtener credenciales guardadas
+    final username = cache.get('licenseUser');
+    final password = cache.get('licensePassword');
+    final database = cache.get('database');
+    
+    if (username == null || password == null || database == null) {
+      print('⚠️ Re-auth: No se encontraron credenciales en cache');
+      print('   - username: ${username != null ? "SÍ" : "NO"}');
+      print('   - password: ${password != null ? "SÍ" : "NO"}');
+      print('   - database: ${database != null ? "SÍ" : "NO"}');
+      return;
+    }
+    
+    print('🔐 Re-auth: Credenciales encontradas');
+    print('   - Database: $database');
+    print('   - Username: $username');
+    
+    // Re-autenticar
+    final session = await client.authenticate(database, username, password);
+    
+    if (session != null) {
+      print('✅ Re-auth: Sesión restaurada exitosamente');
+      print('   - Session ID: ${session.id}');
+      print('   - User: ${session.userName}');
+      
+      // Guardar sesión actualizada en cache
+      cache.put(AppConstants.cacheSessionKey, json.encode(session.toJson()));
+      print('💾 Re-auth: Sesión guardada en cache');
+    } else {
+      print('❌ Re-auth: authenticate() retornó null');
+    }
+  } catch (e, stackTrace) {
+    print('❌ Re-auth: Error durante re-autenticación: $e');
+    print('   Stack trace: $stackTrace');
+    // No relanzar el error - es mejor continuar sin sesión que crashear
+  }
+}
+
 /// Recrear OdooEnvironment con cliente actualizado
 Future<void> _recreateOdooEnvironment() async {
   try {
     print('🔄 Recreando OdooEnvironment...');
     
-    // Desregistrar environment anterior
-    if (getIt.isRegistered<OdooEnvironment>()) {
-      getIt.unregister<OdooEnvironment>();
+    // ⚠️ WORKAROUND: OdooEnvironment() constructor puede invalidar sesión anterior
+    // Solución: Simplemente no crearlo hasta que sea absolutamente necesario
+    // Como los repositories usan LazySingleton, el Environment se creará cuando se use
+    if (!getIt.isRegistered<OdooEnvironment>()) {
+      print('📦 OdooEnvironment no existe, ESPERANDO a que se use (lazy)...');
+      
+      // Registrar como LazySingleton - se creará cuando un repository lo necesite
+      getIt.registerLazySingleton<OdooEnvironment>(
+        () {
+          print('🏗️ OdooEnvironment: Creación LAZY iniciada por primer uso');
+          final client = getIt<OdooClient>();
+          final netConn = getIt<NetworkConnectivity>();
+          final cache = getIt<CustomOdooKv>();
+          
+          final env = OdooEnvironment(
+            client,
+            AppConstants.odooDbName,
+            cache,
+            netConn,
+          );
+          
+          print('✅ OdooEnvironment: Instancia creada');
+          return env;
+        },
+      );
+      
+      print('✅ OdooEnvironment: Factory registrado (creación diferida)');
+    } else {
+      print('✅ OdooEnvironment ya existe, reutilizando instancia actual');
     }
-    
-    // Crear nuevo environment con cliente actualizado
-    getIt.registerLazySingleton<OdooEnvironment>(
-      () {
-        final client = getIt<OdooClient>();
-        final netConn = getIt<NetworkConnectivity>();
-        final cache = getIt<CustomOdooKv>();
-        
-        return OdooEnvironment(
-          client,
-          AppConstants.odooDbName,
-          cache,
-          netConn,
-        );
-      },
-    );
-    
-    print('✅ OdooEnvironment recreado correctamente');
   } catch (e) {
     print('❌ Error recreando OdooEnvironment: $e');
     rethrow;
@@ -569,8 +619,55 @@ Future<bool> _handleAuthenticateResponse(
       print('   - Las cookies se enviarán en todas las requests posteriores');
     }
     
-    // Recrear environment y repositories con el cliente actualizado
-    await _recreateOdooEnvironment();
+    // ⚠️ NO recrear OdooEnvironment inmediatamente - registrar factory lazy
+    // Esto evita que se llame a session/destroy inmediatamente después del login
+    print('⏭️ Registrando factory de Environment (creación diferida)...');
+    
+    // Registrar el factory si no existe
+    if (!getIt.isRegistered<OdooEnvironment>()) {
+      // Variable para almacenar la instancia después de re-autenticación
+      OdooEnvironment? environmentInstance;
+      
+      getIt.registerLazySingleton<OdooEnvironment>(
+        () {
+          if (environmentInstance != null) {
+            return environmentInstance!;
+          }
+          
+          print('🏗️ OdooEnvironment: Creación LAZY iniciada por primer uso');
+          final client = getIt<OdooClient>();
+          final netConn = getIt<NetworkConnectivity>();
+          final cache = getIt<CustomOdooKv>();
+          
+          // Crear environment (esto llamará a session/destroy)
+          final env = OdooEnvironment(
+            client,
+            AppConstants.odooDbName,
+            cache,
+            netConn,
+          );
+          
+          print('✅ OdooEnvironment: Instancia creada');
+          
+        // 🔄 Re-autenticación silenciosa después de session/destroy (fire-and-forget)
+        print('🔄 Iniciando re-autenticación silenciosa en background...');
+        SessionReadyCoordinator.startReauthentication();
+        _reAuthenticateSilently().then((_) {
+          print('✅ Re-autenticación completada');
+        }).catchError((e) {
+          print('⚠️ Re-autenticación falló (continuando de todas formas): $e');
+        }).whenComplete(() {
+          SessionReadyCoordinator.completeReauthentication();
+        });
+          
+          environmentInstance = env;
+          return env;
+        },
+      );
+      print('✅ Factory de OdooEnvironment registrado (creación diferida)');
+    }
+    
+    // Configurar repositories (crearán el Environment lazy cuando se necesite)
     await _setupRepositories();
     
     return true;
@@ -589,16 +686,19 @@ void initAuthScope(OdooSession session) {
   // Registramos la nueva instancia de la sesión.
   getIt.registerSingleton<OdooSession>(session);
 
-  // Re-registramos OdooEnvironment con la sesión y DB correctas.
-  if (getIt.isRegistered<OdooEnvironment>()) {
-    getIt.unregister<OdooEnvironment>();
+  // ⚠️ NO desregistrar OdooEnvironment porque llama a dispose() que hace logout!
+  // Solo registrar si no existe
+  if (!getIt.isRegistered<OdooEnvironment>()) {
+    print('📦 initAuthScope: Creando nuevo OdooEnvironment');
+    getIt.registerSingleton<OdooEnvironment>(OdooEnvironment(
+      getIt<OdooClient>(),
+      session.dbName,
+      getIt<CustomOdooKv>(),
+      getIt<NetworkConnectivity>(),
+    ));
+  } else {
+    print('✅ initAuthScope: OdooEnvironment ya existe, manteniendo instancia actual');
   }
-  getIt.registerSingleton<OdooEnvironment>(OdooEnvironment(
-    getIt<OdooClient>(),
-    session.dbName,
-    getIt<CustomOdooKv>(),
-    getIt<NetworkConnectivity>(),
-  ));
 
   // Repositories
   if (getIt.isRegistered<PartnerRepository>()) {
@@ -640,6 +740,16 @@ void initAuthScope(OdooSession session) {
     () => PricelistRepository(
         getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
   );
+  
+  if (getIt.isRegistered<CityRepository>()) {
+    getIt.unregister<CityRepository>();
+  }
+  getIt.registerLazySingleton<CityRepository>(
+    () => CityRepository(
+        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+  );
+  
+  print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist + City)');
 }
 
 

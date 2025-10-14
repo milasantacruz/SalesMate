@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
 import '../../../core/di/injection_container.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/cache/custom_odoo_kv.dart';
+import '../../../core/errors/session_expired_handler.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';
 import '../../../core/license/license_service.dart';
@@ -11,12 +13,26 @@ import '../../../data/repositories/employee_repository.dart';
 
 /// BLoC para manejar la autenticación de usuarios
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
+  StreamSubscription? _sessionExpiredSubscription;
+  
   AuthBloc() : super(AuthInitial()) {
     on<CheckAuthStatus>(_onCheckAuthStatus);
     on<LoginRequested>(_onLoginRequested);
     on<LogoutRequested>(_onLogoutRequested);
     on<LicenseCheckRequested>(_onLicenseCheckRequested);
     on<EmployeePinLoginRequested>(_onEmployeePinLoginRequested);
+    
+    // Escuchar eventos de sesión expirada
+    _sessionExpiredSubscription = SessionExpiredHandler.sessionExpiredStream.listen((_) {
+      print('🔔 AUTH_BLOC: Sesión expirada detectada desde handler');
+      add(LogoutRequested());
+    });
+  }
+  
+  @override
+  Future<void> close() {
+    _sessionExpiredSubscription?.cancel();
+    return super.close();
   }
 }
 
@@ -31,7 +47,7 @@ class LicenseCheckRequested extends AuthEvent {
 class EmployeePinLoginRequested extends AuthEvent {
   final String pin;
   EmployeePinLoginRequested(this.pin);
-}
+  }
   
   /// Verifica el estado de autenticación actual
   Future<void> _onCheckAuthStatus(CheckAuthStatus event, Emitter<AuthState> emit) async {
@@ -146,6 +162,7 @@ class EmployeePinLoginRequested extends AuthEvent {
       print('🔐 AUTH_BLOC: serverUrl: ${info.serverUrl}');
       print('🔐 AUTH_BLOC: database: ${info.database}');
       print('🔐 AUTH_BLOC: username: ${info.username}');
+      print('🔐 AUTH_BLOC: tipoven: ${info.tipoven}');
       
       if (!info.success || !info.isActive) {
         print('❌ AUTH_BLOC: Licencia no válida o inactiva');
@@ -174,6 +191,10 @@ class EmployeePinLoginRequested extends AuthEvent {
       }
       kv.put('licenseNumber', info.licenseNumber);
       print('💾 AUTH_BLOC: licenseNumber guardado: ${info.licenseNumber}');
+      if (info.tipoven != null) {
+        kv.put('tipoven', info.tipoven);
+        print('💾 AUTH_BLOC: tipoven guardado: ${info.tipoven}');
+      }
 
       // Autenticar con Odoo usando las credenciales de la licencia
       if (info.serverUrl != null && info.database != null && 
@@ -186,6 +207,7 @@ class EmployeePinLoginRequested extends AuthEvent {
         print('🔐 AUTH_BLOC: Database: ${info.database}');
         print('🔐 AUTH_BLOC: Username: ${info.username}');
         print('🔐 AUTH_BLOC: Password: ${info.password?.substring(0, 2)}***');
+        print('🔐 AUTH_BLOC: Tipo de venta: ${info.tipoven}');
         print('🔐 AUTH_BLOC: ═══════════════════════════════════════════════');
         
         try {
@@ -213,6 +235,43 @@ class EmployeePinLoginRequested extends AuthEvent {
           }
           
           print('✅ AUTH_BLOC: Autenticación con Odoo exitosa');
+          
+          // 🚧 TEMPORAL: Desactivar PIN - Siempre ir directo a la app
+          // TODO: Reactivar validación de tipoven cuando se necesite PIN
+          print('🔓 AUTH_BLOC: [TEMPORAL] PIN desactivado - Login directo');
+          print('✅ AUTH_BLOC: Emitiendo AuthAuthenticated (sin PIN)');
+          
+          // Obtener datos del usuario desde cache
+          final userId = kv.get('userId')?.toString() ?? 'unknown';
+          final username = kv.get('username')?.toString() ?? info.username ?? 'Admin';
+          
+          emit(AuthAuthenticated(
+            username: username,
+            userId: userId,
+            database: info.database ?? '',
+          ));
+          return;
+          
+          // CÓDIGO ORIGINAL (comentado temporalmente):
+          /*
+          // Si tipoven es "U" (Usuario/Admin), ir directamente a la app sin PIN
+          if (info.tipoven?.toUpperCase() == 'U') {
+            print('🔓 AUTH_BLOC: Tipo de venta "U" - Login directo como administrador');
+            print('✅ AUTH_BLOC: Emitiendo AuthAuthenticated (sin PIN)');
+            
+            // Obtener datos del usuario desde cache
+            final userId = kv.get('userId')?.toString() ?? 'unknown';
+            final username = kv.get('username')?.toString() ?? info.username ?? 'Admin';
+            
+            emit(AuthAuthenticated(
+              username: username,
+              userId: userId,
+              database: info.database ?? '',
+            ));
+            return;
+          }
+          */
+          
         } catch (e) {
           print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
           print('❌ AUTH_BLOC: EXCEPCIÓN EN AUTENTICACIÓN');
@@ -220,12 +279,18 @@ class EmployeePinLoginRequested extends AuthEvent {
           print('❌ AUTH_BLOC: Error: $e');
           print('❌ AUTH_BLOC: Tipo: ${e.runtimeType}');
           
-          // Extraer mensaje específico si es OdooException
+          // Extraer mensaje específico según el tipo de error
           String errorMsg = 'Error conectando con servidor Odoo';
-          if (e.toString().contains('AccessError')) {
+          
+          if (e.toString().contains('Servidor no disponible')) {
+            // Error 503 o servidor caído
+            errorMsg = '🔴 Servidor no disponible\n\nEl servidor "${info.serverUrl}" no está respondiendo correctamente.\n\nPosibles causas:\n• El servidor está en mantenimiento\n• Problemas técnicos temporales\n• URL incorrecta\n\n💡 Solución: Contacta al administrador o intenta más tarde.';
+          } else if (e.toString().contains('AccessError')) {
             errorMsg = 'Acceso denegado: Las credenciales no son válidas para la base de datos "${info.database}".\n\nContacta al administrador del sistema.';
           } else if (e.toString().contains('database')) {
             errorMsg = 'La base de datos "${info.database}" no existe o no está disponible.';
+          } else if (e.toString().contains('FormatException')) {
+            errorMsg = '🔴 Servidor no disponible\n\nEl servidor no está devolviendo respuestas válidas.\n\nContacta al administrador del sistema.';
           }
           
           print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
@@ -236,12 +301,22 @@ class EmployeePinLoginRequested extends AuthEvent {
         }
       }
 
+      // 🚧 TEMPORAL: Este código nunca se alcanza porque siempre hacemos return arriba
+      // CÓDIGO ORIGINAL (comentado - validación de PIN desactivada):
+      /*
+      // Si llegamos aquí y tipoven es "E", emitir AuthLicenseValidated para pedir PIN
+      print('🔐 AUTH_BLOC: Tipo de venta "${info.tipoven}" - Se requiere PIN de empleado');
       print('✅ AUTH_BLOC: Emitiendo AuthLicenseValidated');
       emit(AuthLicenseValidated(
         licenseNumber: info.licenseNumber,
         serverUrl: info.serverUrl,
         database: info.database,
+        tipoven: info.tipoven,
       ));
+      */
+      
+      // 🚧 TEMPORAL: Como el PIN está desactivado, esto no debería ejecutarse
+      print('⚠️ AUTH_BLOC: Código inalcanzable - PIN está desactivado temporalmente');
     } catch (e, stackTrace) {
       print('❌ AUTH_BLOC: Error validando licencia: $e');
       print('❌ AUTH_BLOC: Stack trace: $stackTrace');

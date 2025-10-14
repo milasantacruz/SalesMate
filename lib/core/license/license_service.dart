@@ -9,6 +9,7 @@ class LicenseInfo {
   final String? database;
   final String? username;
   final String? password;
+  final String? tipoven; // "U" = Usuario Admin (sin PIN), "E" = Empleado (con PIN)
 
   const LicenseInfo({
     required this.success,
@@ -18,6 +19,7 @@ class LicenseInfo {
     this.database,
     this.username,
     this.password,
+    this.tipoven,
   });
 
   factory LicenseInfo.fromWebhook(Map<String, dynamic> json) {
@@ -29,6 +31,7 @@ class LicenseInfo {
     String? database;
     String? username;
     String? password;
+    String? tipoven;
 
     print('🔍 LICENSE_INFO: Número de conexiones: ${connections.length}');
     
@@ -42,12 +45,14 @@ class LicenseInfo {
       database = fieldValues['nombre_bd'] as String?;
       username = fieldValues['usuario'] as String?;
       password = fieldValues['contrasena'] as String?;
+      tipoven = fieldValues['tipoven'] as String?;
       
       print('🔍 LICENSE_INFO: Valores extraídos:');
       print('   - host: $serverUrl');
       print('   - nombre_bd: $database');
       print('   - usuario: $username');
       print('   - contrasena: ${password?.substring(0, 2)}*** (${password?.length} chars)');
+      print('   - tipoven: $tipoven');
     }
 
     final info = LicenseInfo(
@@ -58,9 +63,10 @@ class LicenseInfo {
       database: database,
       username: username,
       password: password,
+      tipoven: tipoven,
     );
     
-    print('✅ LICENSE_INFO: LicenseInfo creado exitosamente');
+    print('✅ LICENSE_INFO: LicenseInfo creado - tipoven: $tipoven');
     return info;
   }
 }

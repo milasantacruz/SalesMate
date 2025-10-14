@@ -43,7 +43,18 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ✅ Keystore files - NUNCA subir a Git
+*.jks
+*.keystore
+/android/key.properties
+/android/app/key.properties
+
 .ai
 .ai/
 ai/
 /.ai/
+
+.Docx/
+Docx/
+
