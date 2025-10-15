@@ -29,7 +29,7 @@ class AuditHelper {
     } catch (e) {
       print('⚠️ AUDIT_HELPER: No se pudo obtener información de auditoría: $e');
       return {
-        'user_id': '0',
+        'user_id': 0, // asegurar tipo int para evitar casts inválidos
         'db_name': 'unknown',
         'session_id': 'anonymous',
         'server_url': '',
@@ -59,7 +59,12 @@ class AuditHelper {
     // Si no hay userId del empleado, usar el de la sesión
     if (effectiveUserId == null) {
       final auditInfo = getCurrentUserAuditInfo();
-      effectiveUserId = auditInfo['user_id'] as int?;
+      final dynamic auditUserId = auditInfo['user_id'];
+      if (auditUserId is int) {
+        effectiveUserId = auditUserId;
+      } else if (auditUserId is String) {
+        effectiveUserId = int.tryParse(auditUserId);
+      }
       print('📝 AUDIT_HELPER: Usando user_id de sesión: $effectiveUserId');
     }
     
@@ -94,7 +99,12 @@ class AuditHelper {
     // Si no hay userId del empleado, usar el de la sesión
     if (effectiveUserId == null) {
       final auditInfo = getCurrentUserAuditInfo();
-      effectiveUserId = auditInfo['user_id'] as int?;
+      final dynamic auditUserId = auditInfo['user_id'];
+      if (auditUserId is int) {
+        effectiveUserId = auditUserId;
+      } else if (auditUserId is String) {
+        effectiveUserId = int.tryParse(auditUserId);
+      }
       print('📝 AUDIT_HELPER: Usando user_id de sesión: $effectiveUserId');
     }
     

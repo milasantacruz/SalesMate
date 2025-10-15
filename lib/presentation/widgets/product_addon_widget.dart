@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../data/models/product_model.dart';
 
 /// Widget para mostrar un producto con controles de cantidad
-class ProductAddonWidget extends StatelessWidget {
+class ProductAddonWidget extends StatefulWidget {
   final Product product;
   final double initialQuantity;
   final Function(double) onQuantityChanged;
@@ -15,6 +16,59 @@ class ProductAddonWidget extends StatelessWidget {
     required this.onQuantityChanged,
     required this.onRemove,
   });
+
+  @override
+  State<ProductAddonWidget> createState() => _ProductAddonWidgetState();
+}
+
+class _ProductAddonWidgetState extends State<ProductAddonWidget> {
+  late final TextEditingController _qtyController;
+  final FocusNode _qtyFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _qtyController = TextEditingController(text: _formatQuantity(widget.initialQuantity));
+  }
+
+  @override
+  void didUpdateWidget(covariant ProductAddonWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialQuantity != widget.initialQuantity && !_qtyFocusNode.hasFocus) {
+      _qtyController.text = _formatQuantity(widget.initialQuantity);
+    }
+  }
+
+  @override
+  void dispose() {
+    _qtyController.dispose();
+    _qtyFocusNode.dispose();
+    super.dispose();
+  }
+
+  String _formatQuantity(double value) {
+    if (value % 1 == 0) return value.toInt().toString();
+    return value.toStringAsFixed(2);
+  }
+
+  double _parseControllerQuantity() {
+    final text = _qtyController.text.replaceAll(',', '.');
+    final parsed = double.tryParse(text);
+    if (parsed == null || parsed <= 0) return 1;
+    return parsed;
+  }
+
+  void _increment() {
+    final current = _parseControllerQuantity();
+    final next = current + 1.0;
+    widget.onQuantityChanged(next);
+  }
+
+  void _decrement() {
+    final current = _parseControllerQuantity();
+    final next = current > 1.0 ? current - 1.0 : 1.0;
+    if (next != current) widget.onQuantityChanged(next);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +87,7 @@ class ProductAddonWidget extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    product.displayName,
+                    widget.product.displayName,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -42,9 +96,9 @@ class ProductAddonWidget extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  if (product.defaultCode != null)
+                  if (widget.product.defaultCode != null)
                     Text(
-                      'Código: ${product.defaultCode}',
+                      'Código: ${widget.product.defaultCode}',
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 12,
@@ -54,7 +108,7 @@ class ProductAddonWidget extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        '\$${product.listPrice.toStringAsFixed(2)}',
+                        '\$${widget.product.listPrice.toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.green,
@@ -86,38 +140,55 @@ class ProductAddonWidget extends StatelessWidget {
                     children: [
                       // Botón más (arriba)
                       IconButton(
-                        onPressed: () => onQuantityChanged(initialQuantity + 1),
+                        onPressed: _increment,
                         icon: const Icon(Icons.add_circle_outline),
                         color: Colors.green,
                         iconSize: 24,
                       ),
 
-                      // Cantidad actual (centro)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          initialQuantity.toInt().toString(),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                      // Campo de texto para cantidad (centro)
+                      SizedBox(
+                        width: 90,
+                        child: TextField(
+                          controller: _qtyController,
+                          focusNode: _qtyFocusNode,
+                          textAlign: TextAlign.center,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'^[0-9]*[\.,]?[0-9]{0,2}')),
+                          ],
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            border: OutlineInputBorder(
+                              borderSide: BorderSide(color: Colors.grey[300]!),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
+                          onTap: () {
+                            _qtyController.selection = TextSelection(baseOffset: 0, extentOffset: _qtyController.text.length);
+                          },
+                          onChanged: (val) {
+                            final parsed = double.tryParse(val.replaceAll(',', '.'));
+                            if (parsed != null && parsed > 0) {
+                              widget.onQuantityChanged(parsed);
+                            }
+                            setState(() {});
+                          },
+                          onSubmitted: (val) {
+                            final parsed = double.tryParse(val.replaceAll(',', '.')) ?? 1.0;
+                            final double normalized = parsed <= 0 ? 1.0 : parsed;
+                            _qtyController.text = _formatQuantity(normalized);
+                            widget.onQuantityChanged(normalized);
+                          },
                         ),
                       ),
 
                       // Botón menos (abajo)
                       IconButton(
-                        onPressed: initialQuantity > 1 
-                            ? () => onQuantityChanged(initialQuantity - 1)
-                            : null,
+                        onPressed: _decrement,
                         icon: const Icon(Icons.remove_circle_outline),
-                        color: initialQuantity > 1 ? Colors.red : Colors.grey,
+                        color: _parseControllerQuantity() > 1.0 ? Colors.red : Colors.grey,
                         iconSize: 24,
                       ),
                     ],
@@ -126,7 +197,7 @@ class ProductAddonWidget extends StatelessWidget {
                   // Subtotal de la línea
                   const SizedBox(height: 4),
                   Text(
-                    'Subtotal: \$${(product.listPrice * initialQuantity).toStringAsFixed(2)}',
+                    'Subtotal: \$${(widget.product.listPrice * (_parseControllerQuantity())).toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Colors.blue,
@@ -163,7 +234,7 @@ class ProductAddonWidget extends StatelessWidget {
                   title: const Text('Eliminar producto'),
                   onTap: () {
                     Navigator.of(ctx).pop();
-                    onRemove();
+                    widget.onRemove();
                   },
                 ),
                 const SizedBox(height: 4),
@@ -186,7 +257,7 @@ class ProductAddonWidget extends StatelessWidget {
     Color chipColor;
     String chipText;
     
-    switch (product.type) {
+    switch (widget.product.type) {
       case 'product':
         chipColor = Colors.blue.shade100;
         chipText = 'Producto';
@@ -201,7 +272,7 @@ class ProductAddonWidget extends StatelessWidget {
         break;
       default:
         chipColor = Colors.grey.shade200;
-        chipText = product.type;
+        chipText = widget.product.type;
     }
     
     return Container(
