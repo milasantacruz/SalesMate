@@ -10,11 +10,13 @@ import '../bloc/sale_order/sale_order_state.dart';
 class OrderTotalsWidget extends StatefulWidget {
   final int partnerId;
   final List<SaleOrderLine> orderLines;
+  final bool isEditing;
   
   const OrderTotalsWidget({
     super.key,
     required this.partnerId,
     required this.orderLines,
+    this.isEditing = false,
   });
   
   @override
@@ -93,6 +95,13 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
     print('🔄 ORDER_TOTALS_WIDGET: _scheduleCalculation called');
     print('🔄 ORDER_TOTALS_WIDGET: partnerId: ${widget.partnerId}');
     print('🔄 ORDER_TOTALS_WIDGET: orderLines.length: ${widget.orderLines.length}');
+    print('🔄 ORDER_TOTALS_WIDGET: isEditing: ${widget.isEditing}');
+    
+    // NO calcular totales si estamos en modo de edición
+    if (widget.isEditing) {
+      print('🔄 ORDER_TOTALS_WIDGET: ⚠️ EDITING MODE - Skipping calculation to avoid temp orders');
+      return;
+    }
     
     _calculationTimer?.cancel();
     _calculationTimer = Timer(const Duration(milliseconds: 500), () {

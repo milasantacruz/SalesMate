@@ -2,15 +2,19 @@ import 'package:odoo_repository/odoo_repository.dart';
 import '../models/employee_model.dart';
 import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
-import 'package:odoo_rpc/odoo_rpc.dart';
+import 'odoo_call_queue_repository.dart';
+import '../../core/di/injection_container.dart';
 
 /// Repository para manejar operaciones con Employees en Odoo con soporte offline
 class EmployeeRepository extends OfflineOdooRepository<Employee> {
   final String modelName = 'hr.employee';
+  late final OdooCallQueueRepository _callQueue;
   List<dynamic> get oDomain => [['active', '=', true]];
 
   EmployeeRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache);
+      : super(env, netConn, cache) {
+    _callQueue = getIt<OdooCallQueueRepository>();
+  }
 
   @override
   List<String> get oFields => Employee.oFields;
@@ -153,16 +157,14 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
     }
   }
 
-  /// Crea un nuevo empleado
-  Future<Employee> createEmployee(Employee employee) async {
-    throw Exception(
-        'Creación de empleados requiere session_id válido del servidor');
+  /// Crea un nuevo empleado (offline/online según conectividad)
+  Future<String> createEmployee(Employee employee) async {
+    return await _callQueue.createRecord(modelName, employee.toJson());
   }
 
-  /// Actualiza un empleado existente
-  Future<Employee> updateEmployee(Employee employee) async {
-    throw Exception(
-        'Actualización de empleados requiere session_id válido del servidor');
+  /// Actualiza un empleado existente (offline/online según conectividad)
+  Future<void> updateEmployee(Employee employee) async {
+    await _callQueue.updateRecord(modelName, employee.id, employee.toJson());
   }
 
   /// Desactiva un empleado (soft delete)
@@ -171,9 +173,10 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
         'Desactivación de empleados requiere session_id válido del servidor');
   }
 
-  /// Elimina permanentemente un empleado
+  /// Elimina permanentemente un empleado (offline/online según conectividad)
   Future<void> deleteEmployee(int id) async {
-    throw Exception(
-        'Eliminación de empleados requiere session_id válido del servidor');
+    await _callQueue.deleteRecord(modelName, id);
   }
 }
+
+

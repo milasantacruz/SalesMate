@@ -7,10 +7,12 @@ import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
 import '../../core/di/injection_container.dart';
 import '../../core/audit/audit_helper.dart';
+import 'odoo_call_queue_repository.dart';
 
 /// Repository para manejar operaciones con Sale Orders en Odoo con soporte offline
 class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   final String modelName = 'sale.order';
+  late final OdooCallQueueRepository _callQueue;
   String _searchTerm = '';
   String? _state;
   int _limit = 80;
@@ -20,7 +22,10 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   final Map<String, OrderTotals> _totalsCache = {};
 
   SaleOrderRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache);
+      : super(env, netConn, cache) {
+    // Inicializar _callQueue desde dependency injection
+    _callQueue = getIt<OdooCallQueueRepository>();
+  }
 
   @override
   List<String> get oFields => SaleOrder.oFields;
@@ -111,11 +116,9 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   Map<String, dynamic> _enrichOrderDataForWrite(Map<String, dynamic> originalData) {
     final enrichedData = Map<String, dynamic>.from(originalData);
     
-    // Inyectar datos de auditoría automático
-    final auditData = AuditHelper.getWriteAuditData();
-    enrichedData.addAll(auditData);
-    
-    print('🔍 SALE_ORDER_REPO: Datos de auditoría para actualización: $auditData');
+    // NO inyectar user_id en actualizaciones - Odoo no permite modificar este campo
+    // Solo agregar otros datos de auditoría si es necesario
+    print('🔍 SALE_ORDER_REPO: Datos de actualización sin user_id (campo protegido)');
     
     return enrichedData;
   }
@@ -238,8 +241,8 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     }
   }
 
-  /// Crea una nueva orden de venta
-  Future<Map<String, dynamic>> createSaleOrder(Map<String, dynamic> orderData) async {
+  /// Crea una nueva orden de venta (directamente en servidor cuando online)
+  Future<String> createSaleOrder(Map<String, dynamic> orderData) async {
     try {
       print('🛒 SALE_ORDER_REPO: Creando nueva orden de venta...');
       print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER', details: 'Creating new order'));
@@ -250,46 +253,55 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       
       print('🔵 REQUEST BODY CREATE SALE ORDER (final): $enrichedData');
 
-      final response = await env.orpc.callKw({
-        'model': modelName,
-        'method': 'create',
-        'args': [enrichedData],
-        'kwargs': {},
-      });
-
-      final orderId = response as int;
-      print('✅ SALE_ORDER_REPO: Orden creada exitosamente con ID: $orderId');
-
-      // Obtener los datos completos de la orden creada
-      final orderDetails = await env.orpc.callKw({
-        'model': modelName,
-        'method': 'read',
-        'args': [[orderId]],
-        'kwargs': {
-          'fields': oFields,
-        },
-      });
-
-      final createdOrderData = (orderDetails as List).first as Map<String, dynamic>;
-      print('📋 SALE_ORDER_REPO: Datos de la orden creada: $createdOrderData');
-
-      return {
-        'success': true,
-        'order_id': orderId,
-        'order_data': createdOrderData,
-      };
-    } on OdooException catch (e) {
-      print('❌ SALE_ORDER_REPO: Error de Odoo al crear orden: $e');
-      return {
-        'success': false,
-        'error': 'Error del servidor: ${e.message}',
-      };
+      // VERIFICAR CONECTIVIDAD: Crear directamente en servidor si estamos online
+      if (await netConn.checkNetConn() == netConnState.online) {
+        print('🌐 SALE_ORDER_REPO: ONLINE - Creando orden directamente en servidor');
+        
+        // Crear directamente en Odoo usando callKw
+        print('🔥 SALE_ORDER_REPO: ===== INICIANDO CREACIÓN REAL =====');
+        print('🔥 SALE_ORDER_REPO: Datos que se enviarán: $enrichedData');
+        print('🔥 SALE_ORDER_REPO: Modelo: $modelName');
+        print('🔥 SALE_ORDER_REPO: Método: create');
+        print('🔥 SALE_ORDER_REPO: Cliente HTTP: ${env.orpc.runtimeType}');
+        print('🔥 SALE_ORDER_REPO: URL base: ${env.orpc.baseURL}');
+        
+        final serverId = await env.orpc.callKw({
+          'model': modelName,
+          'method': 'create',
+          'args': [enrichedData],
+          'kwargs': {},
+        });
+        
+        print('🔥 SALE_ORDER_REPO: ===== RESPUESTA RECIBIDA =====');
+        print('🔥 SALE_ORDER_REPO: Respuesta raw: $serverId');
+        print('🔥 SALE_ORDER_REPO: Tipo de respuesta: ${serverId.runtimeType}');
+        print('🔥 SALE_ORDER_REPO: Es int: ${serverId is int}');
+        print('🔥 SALE_ORDER_REPO: Es String: ${serverId is String}');
+        print('🔥 SALE_ORDER_REPO: Es List: ${serverId is List}');
+        print('🔥 SALE_ORDER_REPO: Es Map: ${serverId is Map}');
+        
+        final serverIdStr = serverId.toString();
+        print('🔥 SALE_ORDER_REPO: ID convertido a string: $serverIdStr');
+        print('🔥 SALE_ORDER_REPO: ===== FIN CREACIÓN REAL =====');
+        
+        print('✅ SALE_ORDER_REPO: Orden creada en servidor con ID: $serverIdStr');
+        print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER_SUCCESS', details: 'Server ID: $serverIdStr'));
+        
+        return serverIdStr;
+      } else {
+        print('📱 SALE_ORDER_REPO: OFFLINE - Usando sistema offline');
+        // Solo usar offline cuando realmente no hay conexión
+        final localId = await _callQueue.createRecord(modelName, enrichedData);
+        
+        print('✅ SALE_ORDER_REPO: Orden creada offline con ID local: $localId');
+        print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER_SUCCESS', details: 'Local ID: $localId'));
+        
+        return localId;
+      }
     } catch (e) {
-      print('❌ SALE_ORDER_REPO: Error general al crear orden: $e');
-      return {
-        'success': false,
-        'error': 'Error inesperado: $e',
-      };
+      print('❌ SALE_ORDER_REPO: Error creando orden: $e');
+      print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER_ERROR', details: 'Error: $e'));
+      rethrow;
     }
   }
 
@@ -432,9 +444,13 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     required int partnerId,
     required List<SaleOrderLine> orderLines,
   }) async {
+    // Generar clave de cache
+    final cacheKey = _generateTotalsCacheKey(partnerId, orderLines);
+    
+    print('🧮 SALE_ORDER_REPO: ⚠️ CALCULANDO TOTALES - Partner: $partnerId, Lines: ${orderLines.length}');
+    print('🧮 SALE_ORDER_REPO: ⚠️ Stack trace: ${StackTrace.current.toString().split('\n').take(5).join('\n')}');
+    
     try {
-      // Generar clave de cache
-      final cacheKey = _generateTotalsCacheKey(partnerId, orderLines);
       
       // Verificar cache primero
       if (_totalsCache.containsKey(cacheKey)) {
@@ -454,15 +470,31 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       final tempOrderData = _buildTempOrderData(partnerId, pricelistId, orderLines);
       print('🧮 SALE_ORDER_REPO: Temp order data: $tempOrderData');
       
+      int? tempOrderId;
       try {
         // Crear una orden temporal para calcular totales
-        print('🧮 SALE_ORDER_REPO: Creando orden temporal para cálculo...');
-        final tempOrderId = await env.orpc.callKw({
+        print('🧮 SALE_ORDER_REPO: ===== INICIANDO CREACIÓN TEMPORAL =====');
+        print('🧮 SALE_ORDER_REPO: Datos temporales: $tempOrderData');
+        print('🧮 SALE_ORDER_REPO: Modelo: sale.order');
+        print('🧮 SALE_ORDER_REPO: Método: create');
+        print('🧮 SALE_ORDER_REPO: Cliente HTTP: ${env.orpc.runtimeType}');
+        print('🧮 SALE_ORDER_REPO: URL base: ${env.orpc.baseURL}');
+        
+        tempOrderId = await env.orpc.callKw({
           'model': 'sale.order',
           'method': 'create',
           'args': [tempOrderData], // ← Usar tempOrderData en lugar de duplicar
           'kwargs': {},
         });
+        
+        print('🧮 SALE_ORDER_REPO: ===== RESPUESTA TEMPORAL RECIBIDA =====');
+        print('🧮 SALE_ORDER_REPO: Respuesta raw: $tempOrderId');
+        print('🧮 SALE_ORDER_REPO: Tipo de respuesta: ${tempOrderId.runtimeType}');
+        print('🧮 SALE_ORDER_REPO: Es int: ${tempOrderId is int}');
+        print('🧮 SALE_ORDER_REPO: Es String: ${tempOrderId is String}');
+        print('🧮 SALE_ORDER_REPO: Es List: ${tempOrderId is List}');
+        print('🧮 SALE_ORDER_REPO: Es Map: ${tempOrderId is Map}');
+        print('🧮 SALE_ORDER_REPO: ===== FIN CREACIÓN TEMPORAL =====');
         
         print('🧮 SALE_ORDER_REPO: Orden temporal creada con ID: $tempOrderId');
         
@@ -478,17 +510,10 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         print('🧮 SALE_ORDER_REPO: Totales de la orden temporal: $order');
         
         // Obtener impuestos agrupados
-        final taxGroups = await _getTaxGroupsFromOrder(tempOrderId);
+        final taxGroups = await _getTaxGroupsFromOrder(tempOrderId!);
         
-        // Eliminar la orden temporal
-        await env.orpc.callKw({
-          'model': 'sale.order',
-          'method': 'unlink',
-          'args': [[tempOrderId]],
-          'kwargs': {},
-        });
-        
-        final totals = OrderTotals(
+        // Crear resultado antes de eliminar
+        final result = OrderTotals(
           amountUntaxed: (order['amount_untaxed'] as num?)?.toDouble() ?? 0.0,
           amountTax: (order['amount_tax'] as num?)?.toDouble() ?? 0.0,
           amountTotal: (order['amount_total'] as num?)?.toDouble() ?? 0.0,
@@ -496,13 +521,35 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         );
         
         // Guardar en cache
-        _totalsCache[cacheKey] = totals;
+        _totalsCache[cacheKey] = result;
         _cleanupCache(); // Limpiar cache si es muy grande
         
-        print('✅ SALE_ORDER_REPO: Totales calculados con Odoo: ${totals.amountTotal}');
-        return totals;
+        print('✅ SALE_ORDER_REPO: Totales calculados con Odoo: ${result.amountTotal}');
+        return result;
         
-      } catch (e) {
+      } finally {
+        // Asegurar que la orden temporal se elimine SIEMPRE
+        if (tempOrderId != null) {
+          try {
+            print('🧮 SALE_ORDER_REPO: FINALLY - Eliminando orden temporal $tempOrderId...');
+            await env.orpc.callKw({
+              'model': 'sale.order',
+              'method': 'unlink',
+              'args': [[tempOrderId]],
+              'kwargs': {},
+            });
+            print('🧮 SALE_ORDER_REPO: FINALLY - Orden temporal $tempOrderId eliminada exitosamente');
+          } catch (e) {
+            print('❌ SALE_ORDER_REPO: FINALLY - Error eliminando orden temporal $tempOrderId: $e');
+            print('❌ SALE_ORDER_REPO: FINALLY - Error type: ${e.runtimeType}');
+            print('❌ SALE_ORDER_REPO: FINALLY - Error details: $e');
+          }
+        } else {
+          print('🧮 SALE_ORDER_REPO: FINALLY - No hay orden temporal que eliminar (tempOrderId es null)');
+        }
+      }
+      
+    } catch (e) {
         print('⚠️ SALE_ORDER_REPO: Error con cálculo de Odoo: $e');
         print('🔄 SALE_ORDER_REPO: Usando cálculo local como fallback...');
         
@@ -516,12 +563,6 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         print('✅ SALE_ORDER_REPO: Totales calculados localmente: ${totals.amountTotal}');
         return totals;
       }
-      
-    } catch (e) {
-      print('❌ SALE_ORDER_REPO: Error calculando totales: $e');
-      // Fallback a cálculo local
-      return _calculateLocalTotals(orderLines);
-    }
   }
   
   /// Obtiene impuestos agrupados desde una orden existente
@@ -543,9 +584,22 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   
   /// Construye datos temporales de orden para cálculos
   Map<String, dynamic> _buildTempOrderData(int partnerId, int? pricelistId, List<SaleOrderLine> orderLines) {
+    final tempId = DateTime.now().millisecondsSinceEpoch; // ID único temporal
+    
+    // Obtener user_id de forma segura
+    int? userId;
+    try {
+      if (getIt.isRegistered<OdooSession>()) {
+        userId = getIt<OdooSession>().userId;
+      }
+    } catch (e) {
+      print('⚠️ SALE_ORDER_REPO: No se pudo obtener userId de OdooSession: $e');
+    }
+    
     return {
+      'name': 'TEMP_CALC_$tempId', // Nombre único para identificar órdenes temporales
       'partner_id': partnerId,
-      'user_id': getIt<OdooSession>().userId, // Agregar user_id para evitar AccessError
+      if (userId != null) 'user_id': userId, // Solo agregar si está disponible
       if (pricelistId != null) 'pricelist_id': pricelistId,
       'order_line': orderLines.map((line) => [
         0, 0, {
@@ -697,8 +751,12 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
           });
 
           if (linesResult is List) {
+            print('🔍 SALE_ORDER_REPO: Raw lines data from Odoo: $linesResult');
             final orderLines = linesResult
-                .map((lineData) => SaleOrderLine.fromJson(lineData))
+                .map((lineData) {
+                  print('🔍 SALE_ORDER_REPO: Processing line data: $lineData');
+                  return SaleOrderLine.fromJson(lineData);
+                })
                 .toList();
             order = order.copyWith(orderLines: orderLines);
             print('✅ SALE_ORDER_REPO: ${orderLines.length} líneas obtenidas para orden $orderId');
@@ -755,11 +813,22 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         print('✅ SALE_ORDER_REPO: Orden $orderId confirmada exitosamente');
       } else {
         // Para otros cambios, usar write normal con datos enriquecidos
-        await env.orpc.callKw({
-          'model': modelName,
-          'method': 'write',
-          'args': [[orderId], enrichedData],
-        });
+        print('🛒 SALE_ORDER_REPO: Llamando write con orderId: $orderId');
+        print('🛒 SALE_ORDER_REPO: Enriched data: $enrichedData');
+        print('🛒 SALE_ORDER_REPO: Usando cliente: ${env.orpc.runtimeType}');
+        
+        try {
+          await env.orpc.callKw({
+            'model': modelName,
+            'method': 'write',
+            'args': [[orderId], enrichedData],
+          });
+          print('🛒 SALE_ORDER_REPO: Write completado exitosamente');
+        } catch (e) {
+          print('❌ SALE_ORDER_REPO: Error en callKw: $e');
+          print('❌ SALE_ORDER_REPO: Tipo de error: ${e.runtimeType}');
+          rethrow;
+        }
         
         print('✅ SALE_ORDER_REPO: Orden $orderId actualizada');
       }
@@ -782,6 +851,107 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         }
       }
       throw Exception('Error inesperado al actualizar orden');
+    }
+  }
+
+  /// Actualiza una orden de venta existente (offline/online según conectividad)
+  Future<void> updateSaleOrder(SaleOrder order) async {
+    await _callQueue.updateRecord(modelName, order.id, order.toJson());
+  }
+
+  /// Elimina permanentemente una orden de venta (offline/online según conectividad)
+  Future<void> deleteSaleOrder(int id) async {
+    await _callQueue.deleteRecord(modelName, id);
+  }
+
+  /// Crea una nueva línea de orden usando sale.order.line.create
+  Future<int> createOrderLine({
+    required int orderId,
+    required int productId,
+    required double quantity,
+    double? priceUnit,
+  }) async {
+    try {
+      print('🛒 SALE_ORDER_REPO: Creando línea para orden $orderId, producto $productId');
+      
+      final data = {
+        'order_id': orderId,
+        'product_id': productId,
+        'product_uom_qty': quantity,
+      };
+      
+      if (priceUnit != null) {
+        data['price_unit'] = priceUnit;
+      }
+      
+      final result = await env.orpc.callKw({
+        'model': 'sale.order.line',
+        'method': 'create',
+        'args': [data],
+        'kwargs': {},
+      });
+      
+      print('✅ SALE_ORDER_REPO: Línea creada con ID: $result');
+      return result;
+      
+    } catch (e) {
+      print('❌ SALE_ORDER_REPO: Error creando línea: $e');
+      rethrow;
+    }
+  }
+
+  /// Actualiza una línea de orden existente usando sale.order.line.write
+  Future<void> updateOrderLine({
+    required int lineId,
+    double? quantity,
+    double? priceUnit,
+  }) async {
+    try {
+      print('🛒 SALE_ORDER_REPO: Actualizando línea $lineId');
+      
+      final data = <String, dynamic>{};
+      if (quantity != null) {
+        data['product_uom_qty'] = quantity;
+      }
+      if (priceUnit != null) {
+        data['price_unit'] = priceUnit;
+      }
+      
+      await env.orpc.callKw({
+        'model': 'sale.order.line',
+        'method': 'write',
+        'args': [
+          [lineId],
+          data,
+        ],
+        'kwargs': {},
+      });
+      
+      print('✅ SALE_ORDER_REPO: Línea $lineId actualizada');
+      
+    } catch (e) {
+      print('❌ SALE_ORDER_REPO: Error actualizando línea: $e');
+      rethrow;
+    }
+  }
+
+  /// Elimina una línea de orden usando sale.order.line.unlink
+  Future<void> deleteOrderLine(int lineId) async {
+    try {
+      print('🛒 SALE_ORDER_REPO: Eliminando línea $lineId');
+      
+      await env.orpc.callKw({
+        'model': 'sale.order.line',
+        'method': 'unlink',
+        'args': [[lineId]],
+        'kwargs': {},
+      });
+      
+      print('✅ SALE_ORDER_REPO: Línea $lineId eliminada');
+      
+    } catch (e) {
+      print('❌ SALE_ORDER_REPO: Error eliminando línea: $e');
+      rethrow;
     }
   }
 }

@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import '../../core/di/injection_container.dart';
 import '../../data/models/city_model.dart';
-import '../../data/models/partner_model.dart';
 import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/city_repository.dart';
 
 /// Dialog para crear una nueva dirección de despacho
 class CreateShippingAddressDialog extends StatefulWidget {
   final int parentPartnerId;
+  final ScrollController? scrollController;
   
   const CreateShippingAddressDialog({
     super.key,
     required this.parentPartnerId,
+    this.scrollController,
   });
 
   @override
@@ -27,6 +28,14 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
   final _zipController = TextEditingController();
   final _phoneController = TextEditingController();
   
+  // Focus nodes para manejar el scroll automático
+  final _nameFocusNode = FocusNode();
+  final _streetFocusNode = FocusNode();
+  final _street2FocusNode = FocusNode();
+  final _cityFocusNode = FocusNode();
+  final _zipFocusNode = FocusNode();
+  final _phoneFocusNode = FocusNode();
+  
   City? _selectedCity;
   List<City> _citySearchResults = [];
   bool _isSearching = false;
@@ -36,6 +45,32 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
   void initState() {
     super.initState();
     _loadInitialCities();
+    _setupFocusListeners();
+  }
+
+  void _setupFocusListeners() {
+    _nameFocusNode.addListener(() => _onFocusChanged(_nameFocusNode, 0));
+    _streetFocusNode.addListener(() => _onFocusChanged(_streetFocusNode, 1));
+    _street2FocusNode.addListener(() => _onFocusChanged(_street2FocusNode, 2));
+    _cityFocusNode.addListener(() => _onFocusChanged(_cityFocusNode, 3));
+    _zipFocusNode.addListener(() => _onFocusChanged(_zipFocusNode, 4));
+    _phoneFocusNode.addListener(() => _onFocusChanged(_phoneFocusNode, 5));
+  }
+
+  void _onFocusChanged(FocusNode focusNode, int fieldIndex) {
+    if (focusNode.hasFocus && widget.scrollController != null) {
+      // Hacer scroll para mostrar el campo enfocado
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (widget.scrollController!.hasClients) {
+          final double scrollPosition = fieldIndex * 80.0; // Aproximadamente 80px por campo
+          widget.scrollController!.animateTo(
+            scrollPosition,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+    }
   }
 
   @override
@@ -46,16 +81,26 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
     _citySearchController.dispose();
     _zipController.dispose();
     _phoneController.dispose();
+    
+    _nameFocusNode.dispose();
+    _streetFocusNode.dispose();
+    _street2FocusNode.dispose();
+    _cityFocusNode.dispose();
+    _zipFocusNode.dispose();
+    _phoneFocusNode.dispose();
     super.dispose();
   }
 
   Future<void> _loadInitialCities() async {
     try {
+      print('🏙️ Cargando ciudades iniciales...');
       final cityRepo = getIt<CityRepository>();
       final cities = await cityRepo.getChileanCities();
+      print('🏙️ Ciudades cargadas: ${cities.length}');
       if (mounted) {
         setState(() {
           _citySearchResults = cities.take(50).toList();
+          print('🏙️ _citySearchResults actualizado: ${_citySearchResults.length}');
         });
       }
     } catch (e) {
@@ -69,6 +114,7 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
       return;
     }
 
+    print('🔍 Buscando ciudades con query: "$query"');
     setState(() {
       _isSearching = true;
     });
@@ -76,12 +122,14 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
     try {
       final cityRepo = getIt<CityRepository>();
       final results = await cityRepo.searchCitiesByName(query);
+      print('🔍 Resultados encontrados: ${results.length}');
       
       if (mounted) {
         setState(() {
           _citySearchResults = results;
           _isSearching = false;
         });
+        print('🔍 _citySearchResults actualizado: ${_citySearchResults.length}');
       }
     } catch (e) {
       print('❌ Error buscando ciudades: $e');
@@ -203,7 +251,13 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
         // Form
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            controller: widget.scrollController,
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
             child: Form(
               key: _formKey,
               child: Column(
@@ -212,6 +266,8 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
                   // Nombre/Alias
                   TextFormField(
                     controller: _nameController,
+                    focusNode: _nameFocusNode,
+                    textInputAction: TextInputAction.next,
                     decoration: InputDecoration(
                       labelText: 'Nombre/Alias de la dirección *',
                       hintText: 'Ej: Oficina Principal, Bodega 1',
@@ -226,12 +282,15 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
                       }
                       return null;
                     },
+                    onFieldSubmitted: (_) => _streetFocusNode.requestFocus(),
                   ),
                   const SizedBox(height: 16),
     
                   // Calle
                   TextFormField(
                     controller: _streetController,
+                    focusNode: _streetFocusNode,
+                    textInputAction: TextInputAction.next,
                     decoration: InputDecoration(
                       labelText: 'Calle y Número *',
                       hintText: 'Ej: Av. Libertador 1234',
@@ -246,12 +305,15 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
                       }
                       return null;
                     },
+                    onFieldSubmitted: (_) => _street2FocusNode.requestFocus(),
                   ),
                   const SizedBox(height: 16),
     
                   // Depto/Oficina
                   TextFormField(
                     controller: _street2Controller,
+                    focusNode: _street2FocusNode,
+                    textInputAction: TextInputAction.next,
                     decoration: InputDecoration(
                       labelText: 'Depto/Oficina (opcional)',
                       hintText: 'Ej: Depto 305, Oficina B',
@@ -260,33 +322,18 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
+                    onFieldSubmitted: (_) => _cityFocusNode.requestFocus(),
                   ),
                   const SizedBox(height: 16),
     
-                  // Comuna (Autocomplete)
-                  Autocomplete<City>(
-                    optionsBuilder: (textEditingValue) {
-                      if (textEditingValue.text.isEmpty) {
-                        return _citySearchResults;
-                      }
-                      _searchCities(textEditingValue.text);
-                      return _citySearchResults;
-                    },
-                    displayStringForOption: (city) => city.displayName,
-                    onSelected: (city) {
-                      setState(() {
-                        _selectedCity = city;
-                        // Autocompletar código postal si existe
-                        if (city.zipcode != null && city.zipcode!.isNotEmpty) {
-                          _zipController.text = city.zipcode!;
-                        }
-                      });
-                    },
-                    fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                      _citySearchController.text = controller.text;
-                      return TextFormField(
-                        controller: controller,
-                        focusNode: focusNode,
+                  // Comuna (Búsqueda personalizada)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: _citySearchController,
+                        focusNode: _cityFocusNode,
+                        textInputAction: TextInputAction.next,
                         decoration: InputDecoration(
                           labelText: 'Comuna *',
                           hintText: 'Buscar comuna...',
@@ -313,42 +360,120 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
                           }
                           return null;
                         },
-                      );
-                    },
-                    optionsViewBuilder: (context, onSelected, options) {
-                      return Align(
-                        alignment: Alignment.topLeft,
-                        child: Material(
-                          elevation: 4,
-                          borderRadius: BorderRadius.circular(8),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              maxHeight: 200,
-                              maxWidth: 400,
-                            ),
-                            child: ListView.builder(
-                              padding: EdgeInsets.zero,
-                              shrinkWrap: true,
-                              itemCount: options.length,
-                              itemBuilder: (context, index) {
-                                final city = options.elementAt(index);
-                                return ListTile(
-                                  leading: const Icon(Icons.location_on, size: 20),
-                                  title: Text(city.name),
-                                  subtitle: city.stateName != null
-                                      ? Text(
-                                          city.stateName!,
-                                          style: const TextStyle(fontSize: 12),
-                                        )
-                                      : null,
-                                  onTap: () => onSelected(city),
-                                );
-                              },
-                            ),
+                        onFieldSubmitted: (_) => _zipFocusNode.requestFocus(),
+                        onChanged: (value) {
+                          // Si el usuario está editando el texto y ya había una ciudad seleccionada,
+                          // limpiar la selección para permitir nueva búsqueda
+                          if (_selectedCity != null && value != _selectedCity!.displayName) {
+                            setState(() {
+                              _selectedCity = null;
+                            });
+                          }
+                          
+                          if (value.isNotEmpty) {
+                            _searchCities(value);
+                          } else {
+                            _loadInitialCities();
+                          }
+                        },
+                        onTap: () {
+                          if (_citySearchResults.isEmpty) {
+                            _loadInitialCities();
+                          }
+                        },
+                      ),
+                      
+                      // Lista de resultados
+                      if (_citySearchResults.isNotEmpty && 
+                          _citySearchController.text.isNotEmpty && 
+                          (_selectedCity == null || _citySearchController.text != _selectedCity?.displayName))
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          constraints: const BoxConstraints(maxHeight: 200),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey[300]!),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _citySearchResults.length,
+                            itemBuilder: (context, index) {
+                              final city = _citySearchResults[index];
+                              final isSelected = _selectedCity?.id == city.id;
+                              
+                              return InkWell(
+                                onTap: () {
+                                  print('🏙️ City selected: ${city.name}');
+                                  setState(() {
+                                    _selectedCity = city;
+                                    _citySearchController.text = city.displayName;
+                                    // Autocompletar código postal si existe
+                                    if (city.zipcode != null && city.zipcode!.isNotEmpty) {
+                                      _zipController.text = city.zipcode!;
+                                    }
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? Colors.blue[50] : Colors.transparent,
+                                    border: index < _citySearchResults.length - 1
+                                        ? Border(bottom: BorderSide(color: Colors.grey[200]!))
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.location_on,
+                                        size: 16,
+                                        color: isSelected ? Colors.blue[700] : Colors.grey[600],
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              city.name,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w500,
+                                                fontSize: 14,
+                                                color: isSelected ? Colors.blue[700] : Colors.black87,
+                                              ),
+                                            ),
+                                            if (city.stateName != null)
+                                              Text(
+                                                city.stateName!,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (isSelected)
+                                        Icon(
+                                          Icons.check_circle,
+                                          size: 16,
+                                          color: Colors.blue[700],
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ),
-                      );
-                    },
+                    ],
                   ),
                   
                   // Información de región (readonly)
@@ -385,6 +510,8 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
                   // Código Postal
                   TextFormField(
                     controller: _zipController,
+                    focusNode: _zipFocusNode,
+                    textInputAction: TextInputAction.next,
                     decoration: InputDecoration(
                       labelText: 'Código Postal (opcional)',
                       hintText: 'Ej: 1234567',
@@ -394,12 +521,15 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
                       ),
                     ),
                     keyboardType: TextInputType.number,
+                    onFieldSubmitted: (_) => _phoneFocusNode.requestFocus(),
                   ),
                   const SizedBox(height: 16),
     
                   // Teléfono
                   TextFormField(
                     controller: _phoneController,
+                    focusNode: _phoneFocusNode,
+                    textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
                       labelText: 'Teléfono (opcional)',
                       hintText: 'Ej: +56 9 1234 5678',
@@ -409,6 +539,7 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
                       ),
                     ),
                     keyboardType: TextInputType.phone,
+                    onFieldSubmitted: (_) => _createAddress(),
                   ),
                   const SizedBox(height: 24),
     

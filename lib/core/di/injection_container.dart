@@ -16,6 +16,10 @@ import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/pricelist_repository.dart';
 import '../../data/repositories/city_repository.dart';
+import '../../data/repositories/operation_queue_repository.dart';
+import '../../data/repositories/local_id_repository.dart';
+import '../../data/repositories/sync_coordinator_repository.dart';
+import '../../data/repositories/odoo_call_queue_repository.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -32,6 +36,11 @@ Future<void> init() async {
     () => CustomOdooKv(),
   );
 
+  // Inicializar OperationQueueRepository
+  final operationQueueRepo = OperationQueueRepository();
+  await operationQueueRepo.init();
+  getIt.registerSingleton<OperationQueueRepository>(operationQueueRepo);
+
   // Odoo Client - usando factory con conditional imports
   getIt.registerLazySingleton<OdooClient>(
     () {
@@ -43,10 +52,15 @@ Future<void> init() async {
   // ⚠️ OdooEnvironment NO se crea aquí porque aún no hay sesión
   // Se creará después del login exitoso en _recreateOdooEnvironment()
 
-  // Odoo Call Queue for offline support - TODO: Implementar cuando esté disponible
-  // getIt.registerLazySingleton<OdooCallQueue>(
-  //   () => OdooCallQueue(getIt<OdooEnvironment>()),
-  // );
+  // Offline functionality dependencies
+  getIt.registerLazySingleton<LocalIdRepository>(
+    () => LocalIdRepository(),
+  );
+
+  // OperationQueueRepository ya está registrado arriba con inicialización
+
+  // SyncCoordinatorRepository se registrará después de OdooClient
+  // OdooCallQueueRepository se registrará después de todos los demás
 }
 
 /// Nueva función de login que acepta credenciales dinámicas
@@ -367,6 +381,28 @@ Future<void> _setupRepositories() async {
     ));
     
     print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist)');
+    
+    // Registrar servicios offline
+    if (getIt.isRegistered<SyncCoordinatorRepository>()) {
+      getIt.unregister<SyncCoordinatorRepository>();
+    }
+    getIt.registerLazySingleton<SyncCoordinatorRepository>(() => SyncCoordinatorRepository(
+      networkConnectivity: getIt<NetworkConnectivity>(),
+      queueRepository: getIt<OperationQueueRepository>(),
+      odooClient: getIt<OdooClient>(),
+    ));
+    
+    if (getIt.isRegistered<OdooCallQueueRepository>()) {
+      getIt.unregister<OdooCallQueueRepository>();
+    }
+    getIt.registerLazySingleton<OdooCallQueueRepository>(() => OdooCallQueueRepository(
+      queueRepository: getIt<OperationQueueRepository>(),
+      idRepository: getIt<LocalIdRepository>(),
+      syncCoordinator: getIt<SyncCoordinatorRepository>(),
+      networkConnectivity: getIt<NetworkConnectivity>(),
+    ));
+    
+    print('✅ Servicios offline configurados correctamente');
     
     // Aquí se agregarán más repositories cuando se implementen
     // env.add(UserRepository(env));

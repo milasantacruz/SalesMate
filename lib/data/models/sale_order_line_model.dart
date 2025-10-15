@@ -30,8 +30,13 @@ class SaleOrderLine extends Equatable {
 
   /// Crea una SaleOrderLine desde JSON
   factory SaleOrderLine.fromJson(Map<String, dynamic> json) {
+    print('🔍 SALE_ORDER_LINE: Parsing JSON: $json');
+    
+    final id = json['id'] as int?;
+    print('🔍 SALE_ORDER_LINE: Parsed ID: $id (type: ${id.runtimeType})');
+    
     return SaleOrderLine(
-      id: json['id'] as int?,
+      id: id,
       productId: json['product_id'] is List 
           ? (json['product_id'] as List)[0] as int
           : json['product_id'] as int,

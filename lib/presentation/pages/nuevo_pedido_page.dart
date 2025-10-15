@@ -4,13 +4,13 @@ import 'package:odoo_rpc/odoo_rpc.dart';
 
 import '../../../core/di/injection_container.dart';
 import '../bloc/partner_bloc.dart';
-import '../bloc/partner_state.dart';
 import '../bloc/product/product_bloc.dart';
 import '../bloc/sale_order/sale_order_bloc.dart';
 import '../bloc/sale_order/sale_order_event.dart';
 import '../bloc/sale_order/sale_order_state.dart';
 import '../widgets/product_addon_widget.dart';
 import '../widgets/product_search_popup.dart';
+import '../widgets/partner_search_popup.dart';
 import '../widgets/order_totals_widget.dart';
 import '../widgets/create_shipping_address_dialog.dart';
 import '../../data/models/create_sale_order_request.dart';
@@ -126,8 +126,6 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                     /* _buildOrderNumberField(),
-                      const SizedBox(height: 16),*/
                       _buildPartnerSelection(),
                       const SizedBox(height: 16),
                       _buildDeliveryAddressField(),
@@ -137,6 +135,7 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
                        OrderTotalsWidget(
                          partnerId: _selectedPartner?.id ?? 0,
                          orderLines: List.from(_orderLines), // Crear una copia de la lista
+                         isEditing: false, // Nuevo pedido no está en modo edición
                        ),
                     ],
                   ),
@@ -150,30 +149,6 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     );
   }
 
-  Widget _buildOrderNumberField() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Número de Pedido',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Se generará automáticamente',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey[600],
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildPartnerSelection() {
     return Card(
@@ -187,67 +162,86 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
-            BlocBuilder<PartnerBloc, PartnerState>(
-              builder: (context, state) {
-                if (state is PartnerLoaded) {
-                  return DropdownButtonFormField<Partner>(
-                    itemHeight: 90,
-                    value: _selectedPartner,
-                    decoration: const InputDecoration(
-                      hintText: 'Seleccionar cliente',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: state.partners.map((partner) {
-                      return DropdownMenuItem<Partner>(
-                        value: partner,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              partner.name,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+            InkWell(
+              onTap: _showPartnerSearch,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[400]!),
+                  borderRadius: BorderRadius.circular(4.0),
+                ),
+                child: _selectedPartner == null
+                    ? Row(
+                        children: [
+                          Icon(Icons.person_search, color: Colors.grey[600]),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Seleccionar cliente',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 16,
                             ),
-                            if (partner.email != null)
-                              Text(
-                                partner.email!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
+                          ),
+                          const Spacer(),
+                          Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[600]),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: Colors.blue[100],
+                            radius: 20,
+                            child: Text(
+                              _selectedPartner!.name.isNotEmpty 
+                                  ? _selectedPartner!.name[0].toUpperCase() 
+                                  : '?',
+                              style: TextStyle(
+                                color: Colors.blue[800],
+                                fontWeight: FontWeight.bold,
                               ),
-
-                            Divider(color: Colors.grey[300],),
-                            
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (Partner? partner) {
-                      setState(() {
-                        _selectedPartner = partner;
-                        _selectedShippingAddress = null;
-                        _deliveryAddresses = [];
-                      });
-                      // Cargar direcciones de despacho del cliente
-                      if (partner != null) {
-                        _loadDeliveryAddresses(partner.id);
-                      }
-                    },
-                    validator: (value) {
-                      if (value == null) {
-                        return 'Debe seleccionar un cliente';
-                      }
-                      return null;
-                    },
-                  );
-                } else if (state is PartnerLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                } else {
-                  return const Text('Error cargando clientes');
-                }
-              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _selectedPartner!.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                if (_selectedPartner!.email != null && _selectedPartner!.email!.isNotEmpty)
+                                  Text(
+                                    _selectedPartner!.email!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[600]),
+                        ],
+                      ),
+              ),
             ),
+            // Validación del campo
+            if (_selectedPartner == null && _formKey.currentState?.validate() == false)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  'Debe seleccionar un cliente',
+                  style: TextStyle(
+                    color: Colors.red[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -317,61 +311,75 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  DropdownButtonFormField<Partner?>(
-                    itemHeight: 90,
-                    value: _selectedShippingAddress,
-                    decoration: InputDecoration(
-                      hintText: _deliveryAddresses.isEmpty
-                          ? 'Sin direcciones - Crear nueva'
-                          : 'Seleccionar dirección de despacho',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.local_shipping),
-                    ),
-                    items: [
-                      // Opción para usar dirección del cliente principal
-                      DropdownMenuItem<Partner?>(
-                        value: null,
-                        child: Row(
-                          children: [
-                            Icon(Icons.business, size: 16, color: Colors.grey[600]),
-                            const SizedBox(width: 8),
-                            const Text('Usar dirección del cliente'),
-                          ],
-                        ),
+                  InkWell(
+                    onTap: _deliveryAddresses.isEmpty ? _showCreateAddressDialog : _showAddressSelector,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16.0),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[400]!),
+                        borderRadius: BorderRadius.circular(4.0),
                       ),
-                      
-                      // Direcciones de despacho existentes
-                      ..._deliveryAddresses.map((address) => 
-                        DropdownMenuItem<Partner?>(
-                          value: address,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                address.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                address.singleLineAddress,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
+                      child: _selectedShippingAddress == null
+                          ? Row(
+                              children: [
+                                Icon(Icons.local_shipping, color: Colors.grey[600]),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _deliveryAddresses.isEmpty
+                                        ? 'Sin direcciones - Crear nueva'
+                                        : 'Seleccionar dirección de despacho',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 16,
+                                    ),
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Divider(color: Colors.grey[300],),
-                            ],
-                          ),
-                        )
-                      ),
-                    ],
-                    onChanged: (Partner? address) {
-                      setState(() {
-                        _selectedShippingAddress = address;
-                      });
-                    },
+                                Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[600]),
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: Colors.green[100],
+                                  radius: 20,
+                                  child: Icon(
+                                    Icons.location_on,
+                                    size: 16,
+                                    color: Colors.green[800],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _selectedShippingAddress!.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        _selectedShippingAddress!.singleLineAddress,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[600]),
+                              ],
+                            ),
+                    ),
                   ),
                   
                   // Preview de la dirección seleccionada
@@ -410,33 +418,43 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
                     fontWeight: FontWeight.bold,
                     color: Colors.blue[900],
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          if (address.street != null) ...[
+          if (address.street != null && address.street!.isNotEmpty) ...[
             Text(
               address.street!,
               style: const TextStyle(fontSize: 13),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
           if (address.street2 != null && address.street2!.isNotEmpty) ...[
             Text(
               address.street2!,
               style: const TextStyle(fontSize: 13),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
           if (address.cityName != null || address.stateName != null) ...[
             Text(
               '${address.cityName ?? address.city ?? ''}, ${address.stateName ?? ''}',
               style: const TextStyle(fontSize: 13),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
           if (address.zip != null && address.zip!.isNotEmpty) ...[
             Text(
               'CP: ${address.zip}',
               style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
           if (address.phone != null && address.phone!.isNotEmpty) ...[
@@ -445,14 +463,181 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
               children: [
                 Icon(Icons.phone, size: 14, color: Colors.grey[600]),
                 const SizedBox(width: 4),
-                Text(
-                  address.phone!,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                Expanded(
+                  child: Text(
+                    address.phone!,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Muestra el selector de direcciones de despacho
+  Future<void> _showAddressSelector() async {
+    if (_deliveryAddresses.isEmpty) {
+      _showCreateAddressDialog();
+      return;
+    }
+
+    await showModalBottomSheet<Partner?>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.8,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Dirección de Despacho',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            
+            // Lista de direcciones
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // Opción para usar dirección del cliente principal
+                  Card(
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.blue[100],
+                        child: Icon(Icons.business, color: Colors.blue[800]),
+                      ),
+                      title: const Text(
+                        'Usar dirección del cliente',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: _selectedPartner != null 
+                          ? Text(
+                              '${_selectedPartner!.name} - ${_selectedPartner!.singleLineAddress}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            )
+                          : null,
+                      trailing: _selectedShippingAddress == null 
+                          ? Icon(Icons.check_circle, color: Colors.blue[700])
+                          : const Icon(Icons.radio_button_unchecked),
+                      onTap: () {
+                        setState(() {
+                          _selectedShippingAddress = null;
+                        });
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  ),
+                  
+                  // Direcciones de despacho existentes
+                  ..._deliveryAddresses.map((address) => Card(
+                    margin: const EdgeInsets.only(top: 8),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.green[100],
+                        child: Icon(Icons.location_on, color: Colors.green[800]),
+                      ),
+                      title: Text(
+                        address.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            address.singleLineAddress,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          if (address.phone != null && address.phone!.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(Icons.phone, size: 12, color: Colors.grey[600]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  address.phone!,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                      trailing: _selectedShippingAddress?.id == address.id
+                          ? Icon(Icons.check_circle, color: Colors.green[700])
+                          : const Icon(Icons.radio_button_unchecked),
+                      onTap: () {
+                        setState(() {
+                          _selectedShippingAddress = address;
+                        });
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  )),
+                  
+                  // Botón para crear nueva dirección
+                  const SizedBox(height: 16),
+                  Card(
+                    color: Colors.orange[50],
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.orange[100],
+                        child: Icon(Icons.add_location, color: Colors.orange[800]),
+                      ),
+                      title: const Text(
+                        'Crear Nueva Dirección',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: const Text(
+                        'Agregar una nueva dirección de despacho',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _showCreateAddressDialog();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -475,17 +660,23 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
       isDismissible: false,
       enableDrag: false,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.9,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
           ),
-        ),
-        child: CreateShippingAddressDialog(
-          parentPartnerId: _selectedPartner!.id,
+          child: CreateShippingAddressDialog(
+            parentPartnerId: _selectedPartner!.id,
+            scrollController: scrollController,
+          ),
         ),
       ),
     );
@@ -687,6 +878,40 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     );
   }
 
+  void _showPartnerSearch() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: context.read<PartnerBloc>()),
+        ],
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: PartnerSearchPopup(
+            selectedPartner: _selectedPartner,
+            onPartnerSelected: (partner) {
+              setState(() {
+                _selectedPartner = partner;
+                _selectedShippingAddress = null;
+                _deliveryAddresses = [];
+              });
+              // Cargar direcciones de despacho del cliente
+              _loadDeliveryAddresses(partner.id);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showProductSearch() {
     showModalBottomSheet(
       context: context,
@@ -745,13 +970,35 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
   }
 
   void _saveDraft() async {
+    // Validar que se haya seleccionado un cliente
+    if (_selectedPartner == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar un cliente'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     if (!_formKey.currentState!.validate()) return;
 
     final formattedDate =
         DateTime.now().toIso8601String().substring(0, 19).replaceFirst('T', ' ');
     
-    // Obtenemos el ID del usuario de la sesión actual
-    final currentUserId = getIt<OdooSession>().userId;
+    // Obtenemos el ID del usuario de la sesión actual de forma segura
+    int? currentUserId;
+    try {
+      if (getIt.isRegistered<OdooSession>()) {
+        currentUserId = getIt<OdooSession>().userId;
+      } else {
+        print('⚠️ NUEVO_PEDIDO: OdooSession no está registrado, usando userId por defecto');
+        currentUserId = 2; // Usuario por defecto
+      }
+    } catch (e) {
+      print('⚠️ NUEVO_PEDIDO: Error obteniendo userId: $e, usando por defecto');
+      currentUserId = 2; // Usuario por defecto
+    }
 
     final request = CreateSaleOrderRequest(
       partnerId: _selectedPartner!.id,
@@ -770,8 +1017,7 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
   }
 
   void _sendOrder() async {
-    if (!_formKey.currentState!.validate()) return;
-
+    // Validar que se haya seleccionado un cliente
     if (_selectedPartner == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -781,6 +1027,8 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
       );
       return;
     }
+    
+    if (!_formKey.currentState!.validate()) return;
 
     if (_orderLines.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -795,8 +1043,19 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     final formattedDate =
         DateTime.now().toIso8601String().substring(0, 19).replaceFirst('T', ' ');
 
-    // Obtenemos el ID del usuario de la sesión actual
-    final currentUserId = getIt<OdooSession>().userId;
+    // Obtenemos el ID del usuario de la sesión actual de forma segura
+    int? currentUserId;
+    try {
+      if (getIt.isRegistered<OdooSession>()) {
+        currentUserId = getIt<OdooSession>().userId;
+      } else {
+        print('⚠️ NUEVO_PEDIDO: OdooSession no está registrado, usando userId por defecto');
+        currentUserId = 2; // Usuario por defecto
+      }
+    } catch (e) {
+      print('⚠️ NUEVO_PEDIDO: Error obteniendo userId: $e, usando por defecto');
+      currentUserId = 2; // Usuario por defecto
+    }
 
     // Preparar datos de la orden
     final orderData = {

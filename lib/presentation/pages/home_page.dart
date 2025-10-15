@@ -10,6 +10,7 @@ import '../widgets/employees_list.dart';
 import '../widgets/sale_orders_list.dart';
 import '../widgets/products_list.dart';
 import 'nuevo_pedido_page.dart';
+import 'offline_test_page.dart';
 
 /// Página principal de la aplicación
 class HomePage extends StatefulWidget {
@@ -107,6 +108,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: _showSearchDialog,
+          ),
+          // Botón de prueba offline
+          IconButton(
+            icon: const Icon(Icons.offline_bolt, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const OfflineTestPage(),
+                ),
+              );
+            },
+            tooltip: 'Probar funcionalidad offline',
           ),
           // Menú de filtros
           PopupMenuButton<String>(

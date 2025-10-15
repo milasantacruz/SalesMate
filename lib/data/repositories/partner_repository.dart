@@ -2,17 +2,23 @@ import 'package:odoo_repository/odoo_repository.dart';
 import '../models/partner_model.dart';
 import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
+import 'odoo_call_queue_repository.dart';
+import '../../core/di/injection_container.dart';
 
 /// Repository para manejar operaciones con Partners en Odoo con soporte offline
 class PartnerRepository extends OfflineOdooRepository<Partner> {
   final String modelName = 'res.partner';
+  late final OdooCallQueueRepository _callQueue;
   List<dynamic> get oDomain => [
     ['active', '=', true],
     ['type', '=', 'contact'],
   ];
 
   PartnerRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache);
+      : super(env, netConn, cache) {
+    // Inicializar _callQueue desde dependency injection
+    _callQueue = getIt<OdooCallQueueRepository>();
+  }
 
   @override
   List<String> get oFields => Partner.oFields;
@@ -203,16 +209,14 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
     }
   }
 
-  /// Crea un nuevo partner
-  Future<Partner> createPartner(Partner partner) async {
-    throw Exception(
-        'Creación de partners requiere session_id válido del servidor');
+  /// Crea un nuevo partner (offline/online según conectividad)
+  Future<String> createPartner(Partner partner) async {
+    return await _callQueue.createRecord(modelName, partner.toJson());
   }
 
-  /// Actualiza un partner existente
-  Future<Partner> updatePartner(Partner partner) async {
-    throw Exception(
-        'Actualización de partners requiere session_id válido del servidor');
+  /// Actualiza un partner existente (offline/online según conectividad)
+  Future<void> updatePartner(Partner partner) async {
+    await _callQueue.updateRecord(modelName, partner.id, partner.toJson());
   }
 
   /// Desactiva un partner (soft delete)
@@ -221,9 +225,9 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
         'Desactivación de partners requiere session_id válido del servidor');
   }
 
-  /// Elimina permanentemente un partner
+  /// Elimina permanentemente un partner (offline/online según conectividad)
   Future<void> deletePartner(int id) async {
-    throw Exception(
-        'Eliminación de partners requiere session_id válido del servidor');
+    await _callQueue.deleteRecord(modelName, id);
   }
 }
+

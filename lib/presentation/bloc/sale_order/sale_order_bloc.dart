@@ -72,25 +72,27 @@ class SaleOrderBloc extends Bloc<SaleOrderEvent, SaleOrderState> {
       CreateSaleOrder event, Emitter<SaleOrderState> emit) async {
     emit(SaleOrderCreating());
     try {
-      final result = await _saleOrderRepository.createSaleOrder(event.orderData);
+      final localId = await _saleOrderRepository.createSaleOrder(event.orderData);
       
-      if (result['success'] == true) {
-        // Emitir estado de éxito
-        emit(SaleOrderCreated(
-          orderId: result['order_id'],
-          orderData: result['order_data'],
-        ));
+      // Emitir estado de éxito
+      emit(SaleOrderCreated(
+        orderId: localId,
+        orderData: event.orderData,
+      ));
         
-        // Recargar la lista de órdenes para mostrar la nueva orden
-        await _saleOrderRepository.fetchRecords();
-        final saleOrders = _saleOrderRepository.latestRecords;
-        if (saleOrders.isEmpty) {
-          emit(const SaleOrderEmpty());
-        } else {
-          emit(SaleOrderLoaded(saleOrders));
-        }
+      // LIMPIAR FILTROS para mostrar todas las órdenes incluyendo la nueva
+      _saleOrderRepository.setSearchParams(
+        searchTerm: '',
+        state: null, // ← Limpiar filtro de estado
+      );
+      
+      // Recargar la lista de órdenes para mostrar la nueva orden
+      await _saleOrderRepository.fetchRecords();
+      final saleOrders = _saleOrderRepository.latestRecords;
+      if (saleOrders.isEmpty) {
+        emit(const SaleOrderEmpty());
       } else {
-        emit(SaleOrderError(result['error'] ?? 'Error desconocido al crear orden'));
+        emit(SaleOrderLoaded(saleOrders));
       }
     } catch (e) {
       emit(SaleOrderError('Error creando orden de venta: $e'));

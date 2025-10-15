@@ -3,10 +3,13 @@ import 'package:odoo_rpc/odoo_rpc.dart';
 import '../models/product_model.dart';
 import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
+import 'odoo_call_queue_repository.dart';
+import '../../core/di/injection_container.dart';
 
 /// Repository para manejar operaciones con Products en Odoo con soporte offline
 class ProductRepository extends OfflineOdooRepository<Product> {
   final String modelName = 'product.product';
+  late final OdooCallQueueRepository _callQueue;
   
   // Parámetros de búsqueda y filtrado
   String _searchTerm = '';
@@ -15,7 +18,10 @@ class ProductRepository extends OfflineOdooRepository<Product> {
   int _offset = 0;
 
   ProductRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache);
+      : super(env, netConn, cache) {
+    // Inicializar _callQueue desde dependency injection
+    _callQueue = getIt<OdooCallQueueRepository>();
+  }
 
   @override
   List<String> get oFields => Product.oFields;
@@ -231,6 +237,21 @@ class ProductRepository extends OfflineOdooRepository<Product> {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Crea un nuevo producto (offline/online según conectividad)
+  Future<String> createProduct(Product product) async {
+    return await _callQueue.createRecord(modelName, product.toJson());
+  }
+
+  /// Actualiza un producto existente (offline/online según conectividad)
+  Future<void> updateProduct(Product product) async {
+    await _callQueue.updateRecord(modelName, product.id, product.toJson());
+  }
+
+  /// Elimina permanentemente un producto (offline/online según conectividad)
+  Future<void> deleteProduct(int id) async {
+    await _callQueue.deleteRecord(modelName, id);
   }
 }
 

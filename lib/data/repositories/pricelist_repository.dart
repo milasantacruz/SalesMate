@@ -2,13 +2,18 @@ import 'package:odoo_repository/odoo_repository.dart';
 import '../models/pricelist_item_model.dart';
 import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
+import 'odoo_call_queue_repository.dart';
+import '../../core/di/injection_container.dart';
 
 /// Repository para manejar operaciones con Pricelist Items en Odoo
 class PricelistRepository extends OfflineOdooRepository<PricelistItem> {
   final String modelName = 'product.pricelist.item';
+  late final OdooCallQueueRepository _callQueue;
 
   PricelistRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache);
+      : super(env, netConn, cache) {
+    _callQueue = getIt<OdooCallQueueRepository>();
+  }
 
   @override
   List<String> get oFields => [
@@ -157,5 +162,20 @@ class PricelistRepository extends OfflineOdooRepository<PricelistItem> {
   Future<List<dynamic>> searchRead() async {
     // Implementación básica para compatibilidad
     return [];
+  }
+
+  /// Crea un nuevo pricelist item (offline/online según conectividad)
+  Future<String> createPricelistItem(PricelistItem item) async {
+    return await _callQueue.createRecord(modelName, item.toJson());
+  }
+
+  /// Actualiza un pricelist item existente (offline/online según conectividad)
+  Future<void> updatePricelistItem(PricelistItem item) async {
+    await _callQueue.updateRecord(modelName, item.id, item.toJson());
+  }
+
+  /// Elimina permanentemente un pricelist item (offline/online según conectividad)
+  Future<void> deletePricelistItem(int id) async {
+    await _callQueue.deleteRecord(modelName, id);
   }
 }

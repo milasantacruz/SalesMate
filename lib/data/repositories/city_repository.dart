@@ -2,10 +2,13 @@ import 'package:odoo_repository/odoo_repository.dart';
 import '../models/city_model.dart';
 import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
+import 'odoo_call_queue_repository.dart';
+import '../../core/di/injection_container.dart';
 
 /// Repository para manejar operaciones con Cities en Odoo con soporte offline
 class CityRepository extends OfflineOdooRepository<City> {
   final String modelName = 'res.city';
+  late final OdooCallQueueRepository _callQueue;
   
   // Domain por defecto: solo ciudades de Chile
   List<dynamic> get oDomain => [
@@ -13,7 +16,9 @@ class CityRepository extends OfflineOdooRepository<City> {
   ];
 
   CityRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache);
+      : super(env, netConn, cache) {
+    _callQueue = getIt<OdooCallQueueRepository>();
+  }
 
   @override
   List<String> get oFields => City.oFields;
@@ -150,6 +155,21 @@ class CityRepository extends OfflineOdooRepository<City> {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Crea una nueva ciudad (offline/online según conectividad)
+  Future<String> createCity(City city) async {
+    return await _callQueue.createRecord(modelName, city.toJson());
+  }
+
+  /// Actualiza una ciudad existente (offline/online según conectividad)
+  Future<void> updateCity(City city) async {
+    await _callQueue.updateRecord(modelName, city.id, city.toJson());
+  }
+
+  /// Elimina permanentemente una ciudad (offline/online según conectividad)
+  Future<void> deleteCity(int id) async {
+    await _callQueue.deleteRecord(modelName, id);
   }
 }
 

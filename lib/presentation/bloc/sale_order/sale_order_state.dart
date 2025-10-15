@@ -45,7 +45,7 @@ class SaleOrderCreating extends SaleOrderState {}
 
 /// Estado cuando se creó una orden exitosamente
 class SaleOrderCreated extends SaleOrderState {
-  final int orderId;
+  final String orderId;
   final Map<String, dynamic> orderData;
 
   const SaleOrderCreated({required this.orderId, required this.orderData});

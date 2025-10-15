@@ -8,6 +8,8 @@ class SaleOrder extends Equatable implements OdooRecord {
   final String name;
   final int? partnerId;
   final String? partnerName;
+  final int? partnerShippingId;
+  final String? partnerShippingName;
   final String dateOrder;
   final double amountTotal;
   final String state;
@@ -29,6 +31,8 @@ class SaleOrder extends Equatable implements OdooRecord {
     required this.name,
     this.partnerId,
     this.partnerName,
+    this.partnerShippingId,
+    this.partnerShippingName,
     required this.dateOrder,
     required this.amountTotal,
     required this.state,
@@ -82,6 +86,8 @@ class SaleOrder extends Equatable implements OdooRecord {
       name: json['name'] is String ? json['name'] : 'N/A',
       partnerId: parseMany2oneId(json['partner_id']),
       partnerName: parseMany2oneName(json['partner_id']),
+      partnerShippingId: parseMany2oneId(json['partner_shipping_id']),
+      partnerShippingName: parseMany2oneName(json['partner_shipping_id']),
       dateOrder: json['date_order'] is String ? json['date_order'] : '',
       amountTotal: (json['amount_total'] as num?)?.toDouble() ?? 0.0,
       state: json['state'] is String ? json['state'] : 'unknown',
@@ -110,6 +116,7 @@ class SaleOrder extends Equatable implements OdooRecord {
       'id': id,
       'name': name,
       'partner_id': partnerId != null ? [partnerId, partnerName] : false,
+      'partner_shipping_id': partnerShippingId != null ? [partnerShippingId, partnerShippingName] : false,
       'date_order': dateOrder,
       'amount_total': amountTotal,
       'state': state,
@@ -128,6 +135,8 @@ class SaleOrder extends Equatable implements OdooRecord {
     String? name,
     int? partnerId,
     String? partnerName,
+    int? partnerShippingId,
+    String? partnerShippingName,
     String? dateOrder,
     double? amountTotal,
     String? state,
@@ -147,6 +156,8 @@ class SaleOrder extends Equatable implements OdooRecord {
       name: name ?? this.name,
       partnerId: partnerId ?? this.partnerId,
       partnerName: partnerName ?? this.partnerName,
+      partnerShippingId: partnerShippingId ?? this.partnerShippingId,
+      partnerShippingName: partnerShippingName ?? this.partnerShippingName,
       dateOrder: dateOrder ?? this.dateOrder,
       amountTotal: amountTotal ?? this.amountTotal,
       state: state ?? this.state,
@@ -180,6 +191,7 @@ class SaleOrder extends Equatable implements OdooRecord {
         'id',
         'name',
         'partner_id',
+        'partner_shipping_id',
         'date_order',
         'amount_total',
         'state',
@@ -198,6 +210,8 @@ class SaleOrder extends Equatable implements OdooRecord {
         name,
         partnerId,
         partnerName,
+        partnerShippingId,
+        partnerShippingName,
         dateOrder,
         amountTotal,
         state,
