@@ -268,10 +268,24 @@ class AuthWrapper extends StatelessWidget {
                                     children: [
                                       Row(
                                         children: [
-                                          const Expanded(
-                                            child: Text(
-                                              'Preparing offline data',
-                                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  bState.isIncremental ? Icons.sync : Icons.download,
+                                                  size: 18,
+                                                  color: Colors.blue,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    bState.isIncremental 
+                                                      ? 'Syncing changes...' 
+                                                      : 'Preparing offline data',
+                                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                           IconButton(

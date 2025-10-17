@@ -102,6 +102,58 @@ class SyncMarkerStore {
     return _getAllMarkers().isNotEmpty;
   }
 
+  /// Verifica si existen marcadores para todos los módulos críticos
+  /// 
+  /// Los módulos críticos son: partners, products, employees, sale_orders
+  /// Si todos tienen marcador, significa que ya se hizo un bootstrap completo
+  /// y podemos usar sincronización incremental
+  bool hasAllCriticalMarkers() {
+    return hasMarker('res.partner') &&
+           hasMarker('product.product') &&
+           hasMarker('hr.employee') &&
+           hasMarker('sale.order');
+  }
+
+  /// Verifica si la caché tiene contenido válido
+  /// 
+  /// Útil para detectar si tenemos marcadores pero la caché está corrupta
+  bool hasCacheContent() {
+    try {
+      final partnerCache = _cache.get('Partner_records');
+      final productCache = _cache.get('Product_records');
+      final employeeCache = _cache.get('Employee_records');
+      final saleOrderCache = _cache.get('sale_orders');
+      
+      print('🔍 SYNC_MARKER_STORE: Verificando caché:');
+      print('   - Partners (Partner_records): ${partnerCache != null ? "✅" : "❌"}');
+      print('   - Products (Product_records): ${productCache != null ? "✅" : "❌"}');
+      print('   - Employees (Employee_records): ${employeeCache != null ? "✅" : "❌"}');
+      print('   - Sale Orders (sale_orders): ${saleOrderCache != null ? "✅" : "❌"}');
+      
+      return partnerCache != null &&
+             productCache != null &&
+             employeeCache != null &&
+             saleOrderCache != null;
+    } catch (e) {
+      print('⚠️ SYNC_MARKER_STORE: Error verificando caché: $e');
+      return false;
+    }
+  }
+
+  /// Verifica si los marcadores son recientes (< 7 días)
+  /// 
+  /// Si los marcadores son muy antiguos, puede ser mejor hacer bootstrap completo
+  bool hasRecentMarkers({int maxDays = 7}) {
+    final oldest = getOldestMarker();
+    if (oldest == null) return false;
+    
+    final now = DateTime.now();
+    final hoursSinceSync = now.difference(oldest).inHours;
+    final daysSinceSync = (hoursSinceSync / 24).ceil();
+    
+    return daysSinceSync <= maxDays;
+  }
+
   /// Obtiene el marcador más antiguo (útil para diagnostics)
   DateTime? getOldestMarker() {
     final markers = getAllMarkers();

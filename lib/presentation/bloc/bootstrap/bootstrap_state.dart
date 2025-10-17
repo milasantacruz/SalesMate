@@ -10,18 +10,22 @@ class UiBootstrapInitial extends UiBootstrapState {}
 
 class UiBootstrapInProgress extends UiBootstrapState {
   final core.BootstrapState state;
-  UiBootstrapInProgress(this.state);
+  final bool isIncremental;
+  
+  UiBootstrapInProgress(this.state, {this.isIncremental = false});
 
   @override
-  List<Object?> get props => [state];
+  List<Object?> get props => [state, isIncremental];
 }
 
 class UiBootstrapCompleted extends UiBootstrapState {
   final core.BootstrapState state;
-  UiBootstrapCompleted(this.state);
+  final bool isIncremental;
+  
+  UiBootstrapCompleted(this.state, {this.isIncremental = false});
 
   @override
-  List<Object?> get props => [state];
+  List<Object?> get props => [state, isIncremental];
 }
 
 class UiBootstrapFailed extends UiBootstrapState {
