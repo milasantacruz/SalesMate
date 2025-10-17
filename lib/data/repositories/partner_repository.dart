@@ -50,6 +50,34 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
     return records;
   }
 
+  @override
+  Future<List<Map<String, dynamic>>> fetchIncrementalRecords(String since) async {
+    print('🔄 PARTNER_REPO: Fetch incremental desde $since');
+    
+    final response = await env.orpc.callKw({
+      'model': modelName,
+      'method': 'search_read',
+      'args': [],
+      'kwargs': {
+        'context': {'bin_size': true},
+        'domain': [
+          ['active', '=', true],
+          ['type', '=', 'contact'],
+          ['write_date', '>', since], // 👈 Filtro de fecha incremental
+        ],
+        'fields': oFields,
+        'limit': 1000, // Alto límite (usualmente pocos cambios)
+        'offset': 0,
+        'order': 'write_date asc',
+      },
+    });
+    
+    final records = response as List<dynamic>;
+    print('🔄 PARTNER_REPO: ${records.length} registros incrementales obtenidos');
+    
+    return records.cast<Map<String, dynamic>>();
+  }
+
 
   /// Obtiene la lista actual de partners
   List<Partner> get currentPartners => latestRecords;

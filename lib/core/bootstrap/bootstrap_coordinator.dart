@@ -13,6 +13,7 @@ import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import 'bootstrap_state.dart';
+import '../sync/sync_marker_store.dart';
 
 /// Coordinador de Bootstrap de caché para datasets críticos
 class BootstrapCoordinator {
@@ -112,8 +113,38 @@ class BootstrapCoordinator {
 
     _currentState = _currentState.copyWith(completedAt: DateTime.now());
     await _cache.put('bootstrap_last_completed_at', _currentState.completedAt!.toIso8601String());
+    
+    // 📌 Registrar marcadores de sincronización para incremental sync
+    await _registerSyncMarkers();
+    
     report();
     return _currentState;
+  }
+
+  /// Registra marcadores de sincronización después del bootstrap completo
+  /// 
+  /// Esto permite que futuras reconexiones usen sincronización incremental
+  /// en lugar de bootstrap completo
+  Future<void> _registerSyncMarkers() async {
+    try {
+      print('📌 BOOTSTRAP_COORDINATOR: Registrando marcadores de sincronización...');
+      
+      final markerStore = getIt<SyncMarkerStore>();
+      final now = DateTime.now().toUtc();
+      
+      await markerStore.setMultipleMarkers({
+        'res.partner': now,
+        'product.product': now,
+        'hr.employee': now,
+        'sale.order': now,
+      });
+      
+      print('✅ BOOTSTRAP_COORDINATOR: Marcadores de sincronización registrados');
+      print('   📅 Timestamp: ${now.toIso8601String()}');
+    } catch (e) {
+      print('❌ BOOTSTRAP_COORDINATOR: Error registrando marcadores: $e');
+      // No relanzar error, no es crítico
+    }
   }
 
 

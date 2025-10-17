@@ -11,6 +11,13 @@ import '../widgets/sale_orders_list.dart';
 import '../widgets/products_list.dart';
 import 'nuevo_pedido_page.dart';
 import 'offline_test_page.dart';
+import '../../core/di/injection_container.dart';
+import '../../core/sync/sync_marker_store.dart';
+import '../../core/sync/incremental_sync_coordinator.dart';
+import '../../data/repositories/partner_repository.dart';
+import '../../data/repositories/product_repository.dart';
+import '../../data/repositories/employee_repository.dart';
+import '../../data/repositories/sale_order_repository.dart';
 
 /// Página principal de la aplicación
 class HomePage extends StatefulWidget {
@@ -76,6 +83,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ],
         ),
         actions: [
+          // Botón de testing para Incremental Sync
+          IconButton(
+            icon: const Icon(Icons.science),
+            tooltip: 'Test Incremental Sync',
+            onPressed: _runIncrementalSyncTests,
+          ),
           // Mostrar nombre del empleado
           BlocBuilder<AuthBloc, AuthState>(
             builder: (context, state) {
@@ -532,6 +545,139 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  /// Ejecuta tests de Incremental Sync
+  Future<void> _runIncrementalSyncTests() async {
+    print('🧪 ===== INICIANDO TESTS DE INCREMENTAL SYNC =====');
+    
+    try {
+      // Test 2: Leer marcadores
+      final markerStore = getIt<SyncMarkerStore>();
+      print('\n🔍 TEST 2: Marcadores encontrados:');
+      final markers = markerStore.getAllMarkers();
+      for (final entry in markers.entries) {
+        print('   ${entry.key}: ${entry.value}');
+      }
+      
+      if (markers.isEmpty) {
+        print('⚠️ No hay marcadores. Ejecutar bootstrap primero.');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No hay marcadores. Ejecuta bootstrap primero (haz login).'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Test 3: Ejecutar incremental sync
+      print('\n🔄 TEST 3: Ejecutando incremental sync...');
+      final incrementalSync = getIt<IncrementalSyncCoordinator>();
+      
+      incrementalSync.onProgress = (state) {
+        print('📊 Progreso: ${state.progressPercent}%');
+        for (final entry in state.modules.entries) {
+          final status = entry.value;
+          if (status.completed) {
+            print('   ✅ ${entry.key.displayName}: ${status.recordsFetched} fetched, ${status.recordsMerged} merged');
+          }
+        }
+      };
+      
+      final startTime = DateTime.now();
+      final result = await incrementalSync.run();
+      final duration = DateTime.now().difference(startTime);
+      
+      print('\n✅ TEST 3: Incremental sync completado');
+      print('   Total fetched: ${result.totalRecordsFetched}');
+      print('   Total merged: ${result.totalRecordsMerged}');
+      print('   Duración: ${duration.inSeconds}s');
+      
+      // Test 4: Verificar conteos
+      print('\n🔍 TEST 4: Verificando conteos...');
+      final partnerRepo = getIt<PartnerRepository>();
+      await partnerRepo.loadRecords();
+      print('   Partners totales: ${partnerRepo.latestRecords.length}');
+      
+      final productRepo = getIt<ProductRepository>();
+      await productRepo.loadRecords();
+      print('   Products totales: ${productRepo.latestRecords.length}');
+      
+      final employeeRepo = getIt<EmployeeRepository>();
+      await employeeRepo.loadRecords();
+      print('   Employees totales: ${employeeRepo.latestRecords.length}');
+      
+      final saleOrderRepo = getIt<SaleOrderRepository>();
+      await saleOrderRepo.loadRecords();
+      print('   Sale Orders totales: ${saleOrderRepo.latestRecords.length}');
+      
+      // Test 5: Verificar marcadores actualizados
+      print('\n🔍 TEST 5: Marcadores actualizados:');
+      final newMarkers = markerStore.getAllMarkers();
+      for (final entry in newMarkers.entries) {
+        print('   ${entry.key}: ${entry.value}');
+      }
+      
+      print('\n🧪 ===== TESTS COMPLETADOS =====');
+      
+      // Mostrar dialog con resultados
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Tests Completados ✅'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Incremental Sync:', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text('• Fetched: ${result.totalRecordsFetched}'),
+                  Text('• Merged: ${result.totalRecordsMerged}'),
+                  Text('• Tiempo: ${duration.inSeconds}s'),
+                  const SizedBox(height: 16),
+                  Text('Conteos Actuales:', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text('• Partners: ${partnerRepo.latestRecords.length}'),
+                  Text('• Products: ${productRepo.latestRecords.length}'),
+                  Text('• Employees: ${employeeRepo.latestRecords.length}'),
+                  Text('• Sale Orders: ${saleOrderRepo.latestRecords.length}'),
+                  const SizedBox(height: 16),
+                  const Text('💡 Revisa los logs en la consola para más detalles.'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ ERROR EN TESTS: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Error en Tests'),
+            content: Text('Ocurrió un error:\n\n$e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 
   /// Obtiene el tooltip del botón flotante según la pestaña activa

@@ -21,6 +21,8 @@ import '../../data/repositories/local_id_repository.dart';
 import '../../data/repositories/sync_coordinator_repository.dart';
 import '../../data/repositories/odoo_call_queue_repository.dart';
 import '../bootstrap/bootstrap_coordinator.dart';
+import '../sync/sync_marker_store.dart';
+import '../sync/incremental_sync_coordinator.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -33,9 +35,11 @@ Future<void> init() async {
   );
 
   // Odoo dependencies - usando implementación personalizada
-  getIt.registerLazySingleton<CustomOdooKv>(
-    () => CustomOdooKv(),
-  );
+  final customCache = CustomOdooKv();
+  getIt.registerSingleton<CustomOdooKv>(customCache);
+  
+  // Registrar también como OdooKv (interfaz base) para compatibilidad
+  getIt.registerSingleton<OdooKv>(customCache);
 
   // Inicializar OperationQueueRepository
   final operationQueueRepo = OperationQueueRepository();
@@ -430,6 +434,29 @@ Future<void> _setupRepositories() async {
       getIt.unregister<BootstrapCoordinator>();
     }
     getIt.registerLazySingleton<BootstrapCoordinator>(() => BootstrapCoordinator());
+    
+    // Registrar SyncMarkerStore para sincronización incremental
+    if (!getIt.isRegistered<SyncMarkerStore>()) {
+      getIt.registerLazySingleton<SyncMarkerStore>(
+        () => SyncMarkerStore(getIt<OdooKv>()),
+      );
+      print('✅ SyncMarkerStore registrado');
+    }
+    
+    // Registrar IncrementalSyncCoordinator
+    if (!getIt.isRegistered<IncrementalSyncCoordinator>()) {
+      getIt.registerLazySingleton<IncrementalSyncCoordinator>(
+        () => IncrementalSyncCoordinator(
+          partnerRepo: getIt<PartnerRepository>(),
+          productRepo: getIt<ProductRepository>(),
+          employeeRepo: getIt<EmployeeRepository>(),
+          saleOrderRepo: getIt<SaleOrderRepository>(),
+          markerStore: getIt<SyncMarkerStore>(),
+          cache: getIt<OdooKv>(),
+        ),
+      );
+      print('✅ IncrementalSyncCoordinator registrado');
+    }
     
     // Aquí se agregarán más repositories cuando se implementen
     // env.add(UserRepository(env));
