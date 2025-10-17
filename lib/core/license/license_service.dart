@@ -41,7 +41,7 @@ class LicenseInfo {
       
       print('🔍 LICENSE_INFO: fieldValues completos: $fieldValues');
       
-      serverUrl = fieldValues['host'] as String?;
+      serverUrl = _sanitizeBaseUrl(fieldValues['host'] as String?);
       database = fieldValues['nombre_bd'] as String?;
       username = fieldValues['usuario'] as String?;
       password = fieldValues['contrasena'] as String?;
@@ -68,6 +68,22 @@ class LicenseInfo {
     
     print('✅ LICENSE_INFO: LicenseInfo creado - tipoven: $tipoven');
     return info;
+  }
+}
+
+String? _sanitizeBaseUrl(String? url) {
+  if (url == null) return null;
+  try {
+    var u = url.trim();
+    if (u.isEmpty) return u;
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+    final parsed = Uri.parse(u);
+    final clean = Uri(scheme: parsed.scheme, host: parsed.host).toString();
+    return clean.endsWith('/') ? clean.substring(0, clean.length - 1) : clean;
+  } catch (_) {
+    return url;
   }
 }
 

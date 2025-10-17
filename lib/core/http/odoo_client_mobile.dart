@@ -8,6 +8,12 @@ class CookieClient extends http.BaseClient {
   final http.Client _inner = http.Client();
   final Map<String, String> _cookies = {};
 
+    /// Exponer cookies de solo lectura (Map inmutable)
+  Map<String, String> get cookies => Map.unmodifiable(_cookies);
+
+  /// Método auxiliar equivalente (por compatibilidad con quien llame getCookies)
+  Map<String, String> getCookies() => Map.unmodifiable(_cookies);
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     print('🚀 ANDROID: Iniciando request a ${request.url}');
@@ -138,3 +144,8 @@ OdooClient createClient(String baseUrl) {
   
   return client;
 }
+
+
+
+
+

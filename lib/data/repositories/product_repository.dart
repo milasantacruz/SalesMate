@@ -92,24 +92,32 @@ class ProductRepository extends OfflineOdooRepository<Product> {
         // ONLINE: Obtener datos frescos del servidor con filtros aplicados
         final recordsJson = await searchRead();
         print('🔍 PRODUCT_REPO: recordsJson length: ${recordsJson.length}');
-        final records =
-            recordsJson.map((item) => fromJson(item as Map<String, dynamic>)).toList();
-        print('🔍 PRODUCT_REPO: records length after fromJson: ${records.length}');
+        
+        try {
+          print('🔍 PRODUCT_REPO: Iniciando conversión de ${recordsJson.length} items...');
+          final records =
+              recordsJson.map((item) => fromJson(item as Map<String, dynamic>)).toList();
+          print('🔍 PRODUCT_REPO: records length after fromJson: ${records.length}');
 
-        // Guardar en caché para uso offline (SIN filtros aplicados)
-        // Primero obtenemos todos los datos sin filtros para la caché
+          // ✅ PRIMERO: Actualizar la lista local INMEDIATAMENTE
+          latestRecords = records;
+          print('✅ PRODUCT_REPO: latestRecords assigned IMMEDIATELY: ${latestRecords.length}');
+        } catch (conversionError) {
+          print('❌ PRODUCT_REPO: Error convirtiendo records: $conversionError');
+          latestRecords = [];
+          rethrow;
+        }
+
+        // DESPUÉS: Guardar en caché para uso offline (en background, no bloquea)
+        // Obtenemos todos los datos sin filtros para la caché
         try {
           final allRecordsJson = await _getAllRecordsFromServer();
           final allRecords = allRecordsJson.map((item) => fromJson(item as Map<String, dynamic>)).toList();
           await cache.put('Product_records', allRecords.map((r) => r.toJson()).toList());
-          print('🔍 PRODUCT_REPO: Cache updated successfully');
+          print('🔍 PRODUCT_REPO: Cache updated successfully with ${allRecords.length} records');
         } catch (e) {
-          print('🔍 PRODUCT_REPO: Error updating cache: $e');
+          print('⚠️ PRODUCT_REPO: Error updating full cache (latestRecords still valid): $e');
         }
-        
-        // Actualizar la lista local con los datos filtrados
-        latestRecords = records;
-        print('🔍 PRODUCT_REPO: latestRecords assigned: ${latestRecords.length}');
       } else {
         // OFFLINE: Cargar datos desde la caché local y aplicar filtros localmente
         final cachedData = cache.get('Product_records', defaultValue: <Map<String, dynamic>>[]);

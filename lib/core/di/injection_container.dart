@@ -20,6 +20,7 @@ import '../../data/repositories/operation_queue_repository.dart';
 import '../../data/repositories/local_id_repository.dart';
 import '../../data/repositories/sync_coordinator_repository.dart';
 import '../../data/repositories/odoo_call_queue_repository.dart';
+import '../bootstrap/bootstrap_coordinator.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -45,7 +46,7 @@ Future<void> init() async {
   getIt.registerLazySingleton<OdooClient>(
     () {
       print('🔧 Creando OdooClient usando factory');
-      return OdooClientFactory.create(AppConstants.odooServerURL);
+      return OdooClientFactory.create(_sanitizeBaseUrl(AppConstants.odooServerURL));
     },
   );
 
@@ -75,13 +76,14 @@ Future<bool> loginWithCredentials({
     final cache = getIt<CustomOdooKv>();
     
     print('🔐 Intentando login con credenciales dinámicas...');
-    print('📡 URL solicitada: ${serverUrl ?? AppConstants.odooServerURL}');
+    final requestedUrl = _sanitizeBaseUrl(serverUrl ?? AppConstants.odooServerURL);
+    print('📡 URL solicitada: $requestedUrl');
     print('🗄️ DB: ${database ?? AppConstants.odooDbName}');
     print('👤 Usuario: $username');
     print('🔍 Cliente base URL ANTES: ${client.baseURL}');
     
     // SI la URL del servidor cambió, recrear el cliente
-    final targetUrl = serverUrl ?? AppConstants.odooServerURL;
+    final targetUrl = requestedUrl;
     if (client.baseURL != targetUrl) {
       print('🔄 URL cambió, recreando OdooClient...');
       print('   Anterior: ${client.baseURL}');
@@ -215,6 +217,25 @@ Future<bool> loginWithCredentials({
     print('❌ Error en login: $e');
     print('📍 Stack trace: $stackTrace');
     return false;
+  }
+}
+
+/// Normaliza una URL para usar solo esquema + host (sin paths como /odoo)
+String _sanitizeBaseUrl(String url) {
+  try {
+    var u = url.trim();
+    if (u.isEmpty) return u;
+    // Si viene con /odoo o cualquier path, eliminarlo
+    // Asegurar esquema
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+    final parsed = Uri.parse(u);
+    final clean = Uri(scheme: parsed.scheme, host: parsed.host).toString();
+    // Quitar trailing slash si lo hubiera
+    return clean.endsWith('/') ? clean.substring(0, clean.length - 1) : clean;
+  } catch (_) {
+    return url; // fallback sin modificar en caso de error
   }
 }
 
@@ -403,6 +424,12 @@ Future<void> _setupRepositories() async {
     ));
     
     print('✅ Servicios offline configurados correctamente');
+    
+    // Registrar BootstrapCoordinator
+    if (getIt.isRegistered<BootstrapCoordinator>()) {
+      getIt.unregister<BootstrapCoordinator>();
+    }
+    getIt.registerLazySingleton<BootstrapCoordinator>(() => BootstrapCoordinator());
     
     // Aquí se agregarán más repositories cuando se implementen
     // env.add(UserRepository(env));

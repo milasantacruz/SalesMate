@@ -29,7 +29,8 @@ class Product extends Equatable implements OdooRecord {
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
       id: json['id'] as int,
-      defaultCode: json['default_code'] as String?,
+      // Odoo puede enviar 'false' para campos vacíos
+      defaultCode: json['default_code'] is String ? json['default_code'] as String : null,
       name: json['name'] as String? ?? '',
       type: json['type'] as String? ?? 'product',
       listPrice: (json['list_price'] as num?)?.toDouble() ?? 0.0,

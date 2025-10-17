@@ -228,7 +228,14 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       
       final cachedData = cache.get('sale_orders') as List<dynamic>?;
       if (cachedData != null) {
-        final cachedRecords = cachedData.map((record) => fromJson(record)).toList();
+        // Convertir cada record a Map<String, dynamic> para evitar errores de tipo
+        final cachedRecords = cachedData.map((record) {
+          if (record is Map) {
+            return fromJson(Map<String, dynamic>.from(record));
+          } else {
+            throw Exception('Invalid record format in cache: ${record.runtimeType}');
+          }
+        }).toList();
         latestRecords = _applyLocalFilters(cachedRecords);
         print('✅ SALE_ORDER_REPO: ${latestRecords.length} records loaded from cache');
       } else {

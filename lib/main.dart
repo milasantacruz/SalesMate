@@ -26,6 +26,10 @@ import 'presentation/pages/splash_page.dart';
 import 'presentation/pages/license_page.dart';
 import 'presentation/pages/pin_login_page.dart';
 import "presentation/theme.dart";
+import 'presentation/bloc/bootstrap/bootstrap_bloc.dart';
+import 'presentation/bloc/bootstrap/bootstrap_event.dart';
+import 'presentation/bloc/bootstrap/bootstrap_state.dart';
+import 'core/bootstrap/bootstrap_state.dart' as core;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,24 +66,9 @@ class MyApp extends StatelessWidget {
             BlocProvider.value(value: BlocProvider.of<AuthBloc>(context)),
             // Proveemos los demás BLoCs solo si el usuario está autenticado
             if (authState is AuthAuthenticated) ...[
+              // Bootstrap de caché al autenticar
               BlocProvider(
-                create: (context) => PartnerBloc(getIt<PartnerRepository>())
-                  ..add(LoadPartners()),
-              ),
-              BlocProvider(
-                create: (context) =>
-                    SaleOrderBloc(getIt<SaleOrderRepository>())
-                      ..add(LoadSaleOrders()),
-              ),
-              BlocProvider(
-                create: (context) => ProductBloc(
-                  getIt<ProductRepository>(),
-                  getIt<PricelistRepository>(),
-                )..add(LoadProducts()),
-              ),
-              BlocProvider(
-                create: (context) => EmployeeBloc(getIt<EmployeeRepository>())
-                  ..add(LoadEmployees()),
+                create: (context) => BootstrapBloc()..add(BootstrapStarted()),
               ),
             ],
           ],
@@ -97,6 +86,64 @@ class MyApp extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _ProgressRow extends StatelessWidget {
+  final String label;
+  final core.ModuleBootstrapStatus? status;
+  const _ProgressRow({required this.label, required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final isError = status?.errorMessage != null;
+    final isCompleted = status?.completed == true;
+    final isLoading = status?.recordsFetched != null && status!.recordsFetched > 0 && !isCompleted;
+    
+    String text;
+    Color textColor;
+    
+    if (status == null) {
+      text = 'Waiting...';
+      textColor = Colors.grey;
+    } else if (isError) {
+      text = 'Error';
+      textColor = Colors.red;
+    } else if (isCompleted) {
+      text = 'Done (${status!.recordsFetched})';
+      textColor = Colors.green;
+    } else if (isLoading) {
+      text = 'Loading (${status!.recordsFetched})';
+      textColor = Colors.blue;
+    } else {
+      text = 'Pending';
+      textColor = Colors.grey;
+    }
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: textColor,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -128,7 +175,113 @@ class AuthWrapper extends StatelessWidget {
           if (state is AuthLoading) {
             return const SplashPage();
           } else if (state is AuthAuthenticated) {
-            return const HomePage();
+            // Mostrar Home con overlay de progreso de bootstrap si corresponde
+            return BlocBuilder<BootstrapBloc, UiBootstrapState>(
+              builder: (context, bState) {
+                // Si el bootstrap está completado, proveer los BLoCs dinámicamente
+                if (bState is UiBootstrapCompleted) {
+                  return MultiBlocProvider(
+                    providers: [
+                      BlocProvider(
+                        create: (context) => PartnerBloc(getIt<PartnerRepository>())
+                          ..add(LoadPartners()),
+                      ),
+                      BlocProvider(
+                        create: (context) => SaleOrderBloc(getIt<SaleOrderRepository>())
+                          ..add(LoadSaleOrders()),
+                      ),
+                      BlocProvider(
+                        create: (context) => ProductBloc(
+                          getIt<ProductRepository>(),
+                          getIt<PricelistRepository>(),
+                        )..add(LoadProducts()),
+                      ),
+                      BlocProvider(
+                        create: (context) => EmployeeBloc(getIt<EmployeeRepository>())
+                          ..add(LoadEmployees()),
+                      ),
+                    ],
+                    child: const HomePage(),
+                  );
+                }
+                
+                // Si el bootstrap está en progreso, mostrar SOLO el overlay (sin HomePage)
+                if (bState is UiBootstrapInProgress) {
+                  final progress = (bState.state.totalProgress * 100).toStringAsFixed(0);
+                  final modules = bState.state.modules;
+                  final partners = modules[core.BootstrapModule.partners];
+                  final products = modules[core.BootstrapModule.products];
+                  final employees = modules[core.BootstrapModule.employees];
+                  final saleOrders = modules[core.BootstrapModule.saleOrders];
+                  return Scaffold(
+                    body: Container(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          child: SafeArea(
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 360),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  margin: const EdgeInsets.symmetric(horizontal: 24),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.12),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Expanded(
+                                            child: Text(
+                                              'Preparing offline data',
+                                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            onPressed: () {
+                                              // Cerrar el overlay manualmente
+                                              context.read<BootstrapBloc>().add(BootstrapDismissed());
+                                            },
+                                            icon: const Icon(Icons.close, size: 20),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: LinearProgressIndicator(value: bState.state.totalProgress == 0 ? null : bState.state.totalProgress),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text('$progress% completed', textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                                      const SizedBox(height: 12),
+                                      _ProgressRow(label: 'Partners', status: partners),
+                                      _ProgressRow(label: 'Products', status: products),
+                                      _ProgressRow(label: 'Employees', status: employees),
+                                      _ProgressRow(label: 'Sale Orders', status: saleOrders),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                    ),
+                  );
+                }
+                // Estado inicial o cualquier otro estado
+                return const SplashPage();
+              },
+            );
           } else if (state is AuthLicenseValidated) {
             // Después de validar licencia, ir a PIN login
             return const PinLoginPage();
