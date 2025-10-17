@@ -509,8 +509,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   /// Muestra el diálogo para crear una nueva orden de venta
   void _showCreateSaleOrderDialog() {
-    // Ya no se necesita el MultiBlocProvider aquí porque los BLoCs
-    // se proveen en el nivel superior de MaterialApp.
+    // Proveer los BLoCs explícitamente en la nueva ruta
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => const NuevoPedidoPage(),

@@ -75,10 +75,10 @@ class SaleOrder extends Equatable implements OdooRecord {
 
     // Log de debug para campos de auditoría
     if (json.containsKey('create_uid')) {
-      print('🔍 SALE_ORDER_MODEL: create_uid raw value: ${json['create_uid']} (type: ${json['create_uid'].runtimeType})');
-      print('🔍 SALE_ORDER_MODEL: create_date raw value: ${json['create_date']} (type: ${json['create_date'].runtimeType})');
-      print('🔍 SALE_ORDER_MODEL: write_uid raw value: ${json['write_uid']} (type: ${json['write_uid'].runtimeType})');
-      print('🔍 SALE_ORDER_MODEL: user_id raw value: ${json['user_id']} (type: ${json['user_id'].runtimeType})');
+      //print('🔍 SALE_ORDER_MODEL: create_uid raw value: ${json['create_uid']} (type: ${json['create_uid'].runtimeType})');
+      //print('🔍 SALE_ORDER_MODEL: create_date raw value: ${json['create_date']} (type: ${json['create_date'].runtimeType})');
+     // print('🔍 SALE_ORDER_MODEL: write_uid raw value: ${json['write_uid']} (type: ${json['write_uid'].runtimeType})');
+      //print('🔍 SALE_ORDER_MODEL: user_id raw value: ${json['user_id']} (type: ${json['user_id'].runtimeType})');
     }
 
     return SaleOrder(

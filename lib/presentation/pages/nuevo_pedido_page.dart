@@ -791,89 +791,60 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
 
 
   Widget _buildBottomActionMenu() {
-    return Container(
-      padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(100),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: InkWell(
-              highlightColor: const Color.fromARGB(255, 91, 233, 30),
-              splashColor: Colors.pink,
-              focusColor: const Color.fromARGB(255, 233, 182, 30),
-              hoverColor: const Color.fromARGB(255, 40, 30, 233),
-              onTap: _showProductSearch,
-              child: Column(
-                children: [
-                  Icon(Icons.shopping_cart_outlined, size:28),
-                  Text('Productos'),
-                ],
+    return Builder(
+      builder: (innerContext) => Container(
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: Theme.of(innerContext).scaffoldBackgroundColor,
+          borderRadius: BorderRadius.circular(100),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: _showProductSearch,
+                child: Column(
+                  children: [
+                    Icon(Icons.shopping_cart_outlined, size: 28),
+                    Text('Productos'),
+                  ],
+                ),
               ),
             ),
-          ),
-
-          const SizedBox(width: 12),
-          Expanded(
-            child: InkWell(
-              onTap: _isLoading ? null : _saveDraft,
-              child: Column(
-                children: [
-                  Icon(Icons.save, size:28),
-                  Text('Guardar'),
-                ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: InkWell(
+                onTap: _isLoading ? null : _saveDraft,
+                child: Column(
+                  children: [
+                    Icon(Icons.save, size: 28),
+                    Text('Guardar'),
+                  ],
+                ),
               ),
             ),
-          ),
-
-          const SizedBox(width: 12),
-          Expanded(
-            child: InkWell(
-              onTap: _isLoading ? null : _sendOrder,
-              child: Column(
-                children: [
-                  Icon(Icons.send, size:28),
-                  Text('Enviar'),
-                ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: InkWell(
+                onTap: _isLoading ? null : _sendOrder,
+                child: Column(
+                  children: [
+                    Icon(Icons.send, size: 28),
+                    Text('Enviar'),
+                  ],
+                ),
               ),
             ),
-          ),
-
-          const SizedBox(width: 12),
-          
-          /*Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _isLoading ? null : _saveDraft,
-              icon: const Icon(Icons.save),
-              label: const Text('Guardar'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _isLoading ? null : _sendOrder,
-              icon: const Icon(Icons.send),
-              label: const Text('Enviar'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ),*/
-        ],
+            const SizedBox(width: 12),
+          ],
+        ),
       ),
     );
   }

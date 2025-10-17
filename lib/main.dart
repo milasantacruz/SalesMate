@@ -70,6 +70,21 @@ class MyApp extends StatelessWidget {
               BlocProvider(
                 create: (context) => BootstrapBloc()..add(BootstrapStarted()),
               ),
+              BlocProvider(
+                create: (context) => PartnerBloc(getIt<PartnerRepository>()),
+              ),
+              BlocProvider(
+                create: (context) => SaleOrderBloc(getIt<SaleOrderRepository>()),
+              ),
+              BlocProvider(
+                create: (context) => ProductBloc(
+                  getIt<ProductRepository>(),
+                  getIt<PricelistRepository>(),
+                ),
+              ),
+              BlocProvider(
+                create: (context) => EmployeeBloc(getIt<EmployeeRepository>()),
+              ),
             ],
           ],
           child: MaterialApp(
@@ -175,46 +190,53 @@ class AuthWrapper extends StatelessWidget {
           if (state is AuthLoading) {
             return const SplashPage();
           } else if (state is AuthAuthenticated) {
-            // Mostrar Home con overlay de progreso de bootstrap si corresponde
-            return BlocBuilder<BootstrapBloc, UiBootstrapState>(
-              builder: (context, bState) {
-                // Si el bootstrap está completado, proveer los BLoCs dinámicamente
-                if (bState is UiBootstrapCompleted) {
-                  return MultiBlocProvider(
-                    providers: [
-                      BlocProvider(
-                        create: (context) => PartnerBloc(getIt<PartnerRepository>())
-                          ..add(LoadPartners()),
-                      ),
-                      BlocProvider(
-                        create: (context) => SaleOrderBloc(getIt<SaleOrderRepository>())
-                          ..add(LoadSaleOrders()),
-                      ),
-                      BlocProvider(
-                        create: (context) => ProductBloc(
-                          getIt<ProductRepository>(),
-                          getIt<PricelistRepository>(),
-                        )..add(LoadProducts()),
-                      ),
-                      BlocProvider(
-                        create: (context) => EmployeeBloc(getIt<EmployeeRepository>())
-                          ..add(LoadEmployees()),
-                      ),
-                    ],
-                    child: const HomePage(),
-                  );
-                }
-                
-                // Si el bootstrap está en progreso, mostrar SOLO el overlay (sin HomePage)
-                if (bState is UiBootstrapInProgress) {
-                  final progress = (bState.state.totalProgress * 100).toStringAsFixed(0);
-                  final modules = bState.state.modules;
-                  final partners = modules[core.BootstrapModule.partners];
-                  final products = modules[core.BootstrapModule.products];
-                  final employees = modules[core.BootstrapModule.employees];
-                  final saleOrders = modules[core.BootstrapModule.saleOrders];
-                  return Scaffold(
-                    body: Container(
+            // Crear los BLoCs SIEMPRE que esté autenticado
+            return MultiBlocProvider(
+              providers: [
+                BlocProvider(
+                  create: (context) => PartnerBloc(getIt<PartnerRepository>()),
+                ),
+                BlocProvider(
+                  create: (context) => SaleOrderBloc(getIt<SaleOrderRepository>()),
+                ),
+                BlocProvider(
+                  create: (context) => ProductBloc(
+                    getIt<ProductRepository>(),
+                    getIt<PricelistRepository>(),
+                  ),
+                ),
+                BlocProvider(
+                  create: (context) => EmployeeBloc(getIt<EmployeeRepository>()),
+                ),
+              ],
+              child: BlocListener<BootstrapBloc, UiBootstrapState>(
+                listener: (context, bState) {
+                  // Cargar datos SOLO cuando bootstrap completa
+                  if (bState is UiBootstrapCompleted) {
+                    print('🎯 MAIN: Bootstrap completado, cargando datos en BLoCs...');
+                    context.read<PartnerBloc>().add(LoadPartners());
+                    context.read<SaleOrderBloc>().add(LoadSaleOrders());
+                    context.read<ProductBloc>().add(LoadProducts());
+                    context.read<EmployeeBloc>().add(LoadEmployees());
+                  }
+                },
+                child: BlocBuilder<BootstrapBloc, UiBootstrapState>(
+                  builder: (context, bState) {
+                    // Si el bootstrap está completado, mostrar HomePage
+                    if (bState is UiBootstrapCompleted) {
+                      return const HomePage();
+                    }
+                    
+                    // Si el bootstrap está en progreso, mostrar SOLO el overlay (sin HomePage)
+                    if (bState is UiBootstrapInProgress) {
+                      final progress = (bState.state.totalProgress * 100).toStringAsFixed(0);
+                      final modules = bState.state.modules;
+                      final partners = modules[core.BootstrapModule.partners];
+                      final products = modules[core.BootstrapModule.products];
+                      final employees = modules[core.BootstrapModule.employees];
+                      final saleOrders = modules[core.BootstrapModule.saleOrders];
+                      return Scaffold(
+                        body: Container(
                           color: Colors.black.withValues(alpha: 0.45),
                           child: SafeArea(
                             child: Center(
@@ -275,12 +297,14 @@ class AuthWrapper extends StatelessWidget {
                               ),
                             ),
                           ),
-                    ),
-                  );
-                }
-                // Estado inicial o cualquier otro estado
-                return const SplashPage();
-              },
+                        ),
+                      );
+                    }
+                    // Estado inicial o cualquier otro estado
+                    return const SplashPage();
+                  },
+                ),
+              ),
             );
           } else if (state is AuthLicenseValidated) {
             // Después de validar licencia, ir a PIN login
