@@ -210,15 +210,21 @@ class AuthWrapper extends StatelessWidget {
                 ),
               ],
               child: BlocListener<BootstrapBloc, UiBootstrapState>(
-                listener: (context, bState) {
-                  // Cargar datos SOLO cuando bootstrap completa
-                  if (bState is UiBootstrapCompleted) {
-                    print('🎯 MAIN: Bootstrap completado, cargando datos en BLoCs...');
-                    context.read<PartnerBloc>().add(LoadPartners());
-                    context.read<SaleOrderBloc>().add(LoadSaleOrders());
-                    context.read<ProductBloc>().add(LoadProducts());
-                    context.read<EmployeeBloc>().add(LoadEmployees());
+                listenWhen: (previous, current) {
+                  // Solo escuchar la PRIMERA vez que se completa (transición de InProgress a Completed)
+                  final shouldListen = previous is! UiBootstrapCompleted && current is UiBootstrapCompleted;
+                  if (shouldListen) {
+                    print('🎯 MAIN: BlocListener detectó transición a UiBootstrapCompleted (PRIMERA VEZ)');
                   }
+                  return shouldListen;
+                },
+                listener: (context, bState) {
+                  // Cargar datos SOLO cuando bootstrap completa (esto se ejecutará UNA SOLA VEZ)
+                  print('🎯 MAIN: Bootstrap completado, cargando datos en BLoCs...');
+                  context.read<PartnerBloc>().add(LoadPartners());
+                  context.read<SaleOrderBloc>().add(LoadSaleOrders());
+                  context.read<ProductBloc>().add(LoadProducts());
+                  context.read<EmployeeBloc>().add(LoadEmployees());
                 },
                 child: BlocBuilder<BootstrapBloc, UiBootstrapState>(
                   builder: (context, bState) {

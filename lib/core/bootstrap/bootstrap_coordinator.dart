@@ -182,20 +182,72 @@ class BootstrapCoordinator {
       final m = BootstrapModule.partners;
       int page = 0;
       int totalFetched = 0;
+      int offset = 0;
+      final List<Map<String, dynamic>> allRecordsJson = [];
+      
       try {
-        print('👥 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de partners...');
-        await _partnerRepo.fetchRecords();
-        print('👥 BOOTSTRAP_COORDINATOR: fetchRecords() completado');
+        print('👥 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de partners con paginación...');
         
-        // Esperar un frame para que el repositorio actualice latestRecords
-        await Future.delayed(const Duration(milliseconds: 100));
-        totalFetched = _partnerRepo.latestRecords.length;
-        print('👥 BOOTSTRAP_COORDINATOR: Total fetched: $totalFetched');
+        // Loop de paginación
+        while (true) {
+          print('👥 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
+          
+          // Hacer llamada directa a search_read con offset y limit
+          final response = await _partnerRepo.env.orpc.callKw({
+            'model': 'res.partner',
+            'method': 'search_read',
+            'args': [],
+            'kwargs': {
+              'context': {'bin_size': true},
+              'domain': [
+                ['active', '=', true],
+                ['type', '=', 'contact'],
+              ],
+              'fields': _partnerRepo.oFields,
+              'limit': pageSize,
+              'offset': offset,
+              'order': 'name'
+            },
+          });
+          
+          final pageRecords = response as List<dynamic>;
+          final pageCount = pageRecords.length;
+          print('👥 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
+          
+          // Agregar a la lista acumulada
+          allRecordsJson.addAll(pageRecords.cast<Map<String, dynamic>>());
+          totalFetched += pageCount;
+          page++;
+          
+          // Actualizar progreso
+          _currentState = _updateModule(_currentState, m, page, totalFetched, completed: false);
+          if (onProgress != null) onProgress!(_currentState);
+          
+          // Si obtuvimos menos registros que pageSize, ya no hay más páginas
+          if (pageCount < pageSize) {
+            print('👥 BOOTSTRAP_COORDINATOR: Última página alcanzada (${pageCount} < $pageSize)');
+            break;
+          }
+          
+          // Incrementar offset para siguiente página
+          offset += pageSize;
+          
+          // Pequeño delay para no sobrecargar el servidor
+          await Future.delayed(const Duration(milliseconds: 50));
+        }
         
-        page++;
+        // Convertir todos los JSON a objetos Partner y actualizar el repositorio
+        final allPartners = allRecordsJson.map((json) => _partnerRepo.fromJson(json)).toList();
+        _partnerRepo.latestRecords = allPartners;
+        
+        // Guardar en caché
+        await _cache.put('Partner_records', allRecordsJson);
+        
+        print('👥 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched partners en $page página(s)');
+        
+        // Marcar como completado
         final completed = totalFetched > 0;
         _currentState = _updateModule(_currentState, m, page, totalFetched, completed: completed);
-        print('👥 BOOTSTRAP_COORDINATOR: Partners - Fetched: $totalFetched, Completed: $completed');
       } catch (e) {
         print('👥 BOOTSTRAP_COORDINATOR: Error en partners: $e');
         _currentState = _failModule(_currentState, m, e.toString());
@@ -206,36 +258,80 @@ class BootstrapCoordinator {
     final m = BootstrapModule.products;
     int page = 0;
     int totalFetched = 0;
+    int offset = 0;
+    final List<Map<String, dynamic>> allRecordsJson = [];
     
     for (int attempt = 1; attempt <= 2; attempt++) {
       try {
-        print('📦 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de productos (intento $attempt/2)...');
-        // Configurar límite más alto para bootstrap
-        _productRepo.setSearchParams(limit: pageSize, offset: 0);
-        print('📦 BOOTSTRAP_COORDINATOR: Parámetros configurados - limit: $pageSize, offset: 0');
+        print('📦 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de productos con paginación (intento $attempt/2)...');
         
-        print('📦 BOOTSTRAP_COORDINATOR: Llamando fetchRecords()...');
-        await _productRepo.fetchRecords();
-        print('📦 BOOTSTRAP_COORDINATOR: fetchRecords() completado');
-
-        // Leer INMEDIATAMENTE sin delay
-        totalFetched = _productRepo.latestRecords.length;
-        print('📦 BOOTSTRAP_COORDINATOR: Total fetched INMEDIATO: $totalFetched');
+        // Reset para cada intento
+        page = 0;
+        totalFetched = 0;
+        offset = 0;
+        allRecordsJson.clear();
         
-        // Si es 0, esperar un poco y reintentar (fallback)
-        if (totalFetched == 0) {
-          print('⚠️ BOOTSTRAP_COORDINATOR: Total es 0, esperando 200ms y reintentando...');
-          await Future.delayed(const Duration(milliseconds: 200));
-          totalFetched = _productRepo.latestRecords.length;
-          print('📦 BOOTSTRAP_COORDINATOR: Total fetched DESPUÉS DE DELAY: $totalFetched');
+        // Loop de paginación
+        while (true) {
+          print('📦 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
+          
+          // Hacer llamada directa a search_read con offset y limit
+          final response = await _productRepo.env.orpc.callKw({
+            'model': 'product.product',
+            'method': 'search_read',
+            'args': [],
+            'kwargs': {
+              'context': {'bin_size': true},
+              'domain': [
+                ['active', '=', true],
+                ['sale_ok', '=', true],
+              ],
+              'fields': _productRepo.oFields,
+              'limit': pageSize,
+              'offset': offset,
+            },
+          });
+          
+          final pageRecords = response as List<dynamic>;
+          final pageCount = pageRecords.length;
+          print('📦 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
+          
+          // Agregar a la lista acumulada
+          allRecordsJson.addAll(pageRecords.cast<Map<String, dynamic>>());
+          totalFetched += pageCount;
+          page++;
+          
+          // Actualizar progreso
+          _currentState = _updateModule(_currentState, m, page, totalFetched, completed: false);
+          if (onProgress != null) onProgress!(_currentState);
+          
+          // Si obtuvimos menos registros que pageSize, ya no hay más páginas
+          if (pageCount < pageSize) {
+            print('📦 BOOTSTRAP_COORDINATOR: Última página alcanzada (${pageCount} < $pageSize)');
+            break;
+          }
+          
+          // Incrementar offset para siguiente página
+          offset += pageSize;
+          
+          // Pequeño delay para no sobrecargar el servidor
+          await Future.delayed(const Duration(milliseconds: 50));
         }
         
-        page++;
-        // Solo marcar como completado si realmente obtuvimos productos
+        // Convertir todos los JSON a objetos Product y actualizar el repositorio
+        final allProducts = allRecordsJson.map((json) => _productRepo.fromJson(json)).toList();
+        _productRepo.latestRecords = allProducts;
+        
+        // Guardar en caché
+        await _cache.put('Product_records', allRecordsJson);
+        
+        print('📦 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched productos en $page página(s)');
+        
+        // Marcar como completado
         final completed = totalFetched > 0;
         _currentState = _updateModule(_currentState, m, page, totalFetched, completed: completed);
-        print('📦 BOOTSTRAP_COORDINATOR: Products - Fetched: $totalFetched, Completed: $completed');
-        break; // Éxito, salir del loop
+        break; // Éxito, salir del loop de reintentos
+        
       } catch (e) {
         print('📦 BOOTSTRAP_COORDINATOR: Error en productos (intento $attempt/2): $e');
         
@@ -257,20 +353,71 @@ class BootstrapCoordinator {
     final m = BootstrapModule.employees;
     int page = 0;
     int totalFetched = 0;
+    int offset = 0;
+    final List<Map<String, dynamic>> allRecordsJson = [];
+    
     try {
-      print('👨‍💼 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de employees...');
-      await _employeeRepo.fetchRecords();
-      print('👨‍💼 BOOTSTRAP_COORDINATOR: fetchRecords() completado');
+      print('👨‍💼 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de employees con paginación...');
       
-      // Esperar un frame para que el repositorio actualice latestRecords
-      await Future.delayed(const Duration(milliseconds: 100));
-      totalFetched = _employeeRepo.latestRecords.length;
-      print('👨‍💼 BOOTSTRAP_COORDINATOR: Total fetched: $totalFetched');
+      // Loop de paginación
+      while (true) {
+        print('👨‍💼 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
+        
+        // Hacer llamada directa a search_read con offset y limit
+        final response = await _employeeRepo.env.orpc.callKw({
+          'model': 'hr.employee',
+          'method': 'search_read',
+          'args': [],
+          'kwargs': {
+            'context': {'bin_size': true},
+            'domain': [
+              ['active', '=', true],
+            ],
+            'fields': _employeeRepo.oFields,
+            'limit': pageSize,
+            'offset': offset,
+            'order': 'name'
+          },
+        });
+        
+        final pageRecords = response as List<dynamic>;
+        final pageCount = pageRecords.length;
+        print('👨‍💼 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
+        
+        // Agregar a la lista acumulada
+        allRecordsJson.addAll(pageRecords.cast<Map<String, dynamic>>());
+        totalFetched += pageCount;
+        page++;
+        
+        // Actualizar progreso
+        _currentState = _updateModule(_currentState, m, page, totalFetched, completed: false);
+        if (onProgress != null) onProgress!(_currentState);
+        
+        // Si obtuvimos menos registros que pageSize, ya no hay más páginas
+        if (pageCount < pageSize) {
+          print('👨‍💼 BOOTSTRAP_COORDINATOR: Última página alcanzada (${pageCount} < $pageSize)');
+          break;
+        }
+        
+        // Incrementar offset para siguiente página
+        offset += pageSize;
+        
+        // Pequeño delay para no sobrecargar el servidor
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
       
-      page++;
+      // Convertir todos los JSON a objetos Employee y actualizar el repositorio
+      final allEmployees = allRecordsJson.map((json) => _employeeRepo.fromJson(json)).toList();
+      _employeeRepo.latestRecords = allEmployees;
+      
+      // Guardar en caché
+      await _cache.put('Employee_records', allRecordsJson);
+      
+      print('👨‍💼 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched employees en $page página(s)');
+      
+      // Marcar como completado
       final completed = totalFetched > 0;
       _currentState = _updateModule(_currentState, m, page, totalFetched, completed: completed);
-      print('👨‍💼 BOOTSTRAP_COORDINATOR: Employees - Fetched: $totalFetched, Completed: $completed');
     } catch (e) {
       print('👨‍💼 BOOTSTRAP_COORDINATOR: Error en employees: $e');
       _currentState = _failModule(_currentState, m, e.toString());
@@ -281,20 +428,71 @@ class BootstrapCoordinator {
     final m = BootstrapModule.saleOrders;
     int page = 0;
     int totalFetched = 0;
+    int offset = 0;
+    final List<Map<String, dynamic>> allRecordsJson = [];
+    
     try {
-      print('🛒 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de sale orders...');
-      await _saleOrderRepo.fetchRecords();
-      print('🛒 BOOTSTRAP_COORDINATOR: fetchRecords() completado');
+      print('🛒 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de sale orders con paginación...');
       
-      // Esperar un frame para que el repositorio actualice latestRecords
-      await Future.delayed(const Duration(milliseconds: 100));
-      totalFetched = _saleOrderRepo.latestRecords.length;
-      print('🛒 BOOTSTRAP_COORDINATOR: Total fetched: $totalFetched');
+      // Loop de paginación
+      while (true) {
+        print('🛒 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
+        
+        // Hacer llamada directa a search_read con offset y limit
+        final response = await _saleOrderRepo.env.orpc.callKw({
+          'model': 'sale.order',
+          'method': 'search_read',
+          'args': [],
+          'kwargs': {
+            'context': {'bin_size': true},
+            'domain': [
+              ['state', '!=', 'cancel'], // Excluir órdenes canceladas
+            ],
+            'fields': _saleOrderRepo.oFields,
+            'limit': pageSize,
+            'offset': offset,
+            'order': 'date_order desc'
+          },
+        });
+        
+        final pageRecords = response as List<dynamic>;
+        final pageCount = pageRecords.length;
+        print('🛒 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
+        
+        // Agregar a la lista acumulada
+        allRecordsJson.addAll(pageRecords.cast<Map<String, dynamic>>());
+        totalFetched += pageCount;
+        page++;
+        
+        // Actualizar progreso
+        _currentState = _updateModule(_currentState, m, page, totalFetched, completed: false);
+        if (onProgress != null) onProgress!(_currentState);
+        
+        // Si obtuvimos menos registros que pageSize, ya no hay más páginas
+        if (pageCount < pageSize) {
+          print('🛒 BOOTSTRAP_COORDINATOR: Última página alcanzada (${pageCount} < $pageSize)');
+          break;
+        }
+        
+        // Incrementar offset para siguiente página
+        offset += pageSize;
+        
+        // Pequeño delay para no sobrecargar el servidor
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
       
-      page++;
+      // Convertir todos los JSON a objetos SaleOrder y actualizar el repositorio
+      final allSaleOrders = allRecordsJson.map((json) => _saleOrderRepo.fromJson(json)).toList();
+      _saleOrderRepo.latestRecords = allSaleOrders;
+      
+      // Guardar en caché
+      await _cache.put('sale_orders', allRecordsJson);
+      
+      print('🛒 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched sale orders en $page página(s)');
+      
+      // Marcar como completado
       final completed = totalFetched > 0;
       _currentState = _updateModule(_currentState, m, page, totalFetched, completed: completed);
-      print('🛒 BOOTSTRAP_COORDINATOR: Sale Orders - Fetched: $totalFetched, Completed: $completed');
     } catch (e) {
       print('🛒 BOOTSTRAP_COORDINATOR: Error en sale orders: $e');
       _currentState = _failModule(_currentState, m, e.toString());

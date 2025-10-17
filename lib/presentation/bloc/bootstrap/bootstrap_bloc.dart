@@ -17,6 +17,8 @@ class BootstrapBloc extends Bloc<BootstrapEvent, UiBootstrapState> {
 
   Future<void> _onStarted(BootstrapStarted event, Emitter<UiBootstrapState> emit) async {
     try {
+      bool hasEmittedCompleted = false; // Flag para evitar emitir completed múltiples veces
+      
       // Configurar callback de progreso
       _coordinator.onProgress = (core.BootstrapState progressState) {
         // Verificar si algún módulo tiene error
@@ -27,9 +29,8 @@ class BootstrapBloc extends Bloc<BootstrapEvent, UiBootstrapState> {
               .map((m) => '${m.module.name}: ${m.errorMessage}')
               .join(', ');
           emit(UiBootstrapFailed(errorMessages));
-        } else if (_coordinator.isMinimumReady(progressState)) {
-          emit(UiBootstrapCompleted(progressState));
         } else {
+          // SOLO emitir progreso, NO completed (eso se hará al final)
           emit(UiBootstrapInProgress(progressState));
         }
       };
@@ -46,11 +47,16 @@ class BootstrapBloc extends Bloc<BootstrapEvent, UiBootstrapState> {
       // Ejecutar el bootstrap
       final finalState = await _coordinator.run(pageSize: event.pageSize);
       
-      // Verificar estado final: si no está listo el mínimo, mantener overlay con progreso
-      if (_coordinator.isMinimumReady(finalState)) {
-        emit(UiBootstrapCompleted(finalState));
-      } else {
-        emit(UiBootstrapInProgress(finalState));
+      // Emitir completed SOLO UNA VEZ al final
+      if (!hasEmittedCompleted) {
+        hasEmittedCompleted = true;
+        if (_coordinator.isMinimumReady(finalState)) {
+          print('🎯 BOOTSTRAP_BLOC: Emitiendo UiBootstrapCompleted (ÚNICA VEZ)');
+          emit(UiBootstrapCompleted(finalState));
+        } else {
+          print('⚠️ BOOTSTRAP_BLOC: Mínimo no alcanzado, manteniendo InProgress');
+          emit(UiBootstrapInProgress(finalState));
+        }
       }
     } catch (e) {
       emit(UiBootstrapFailed(e.toString()));
