@@ -12,8 +12,8 @@ import '../widgets/order_totals_widget.dart';
 import '../widgets/product_search_popup.dart';
 import '../widgets/create_shipping_address_dialog.dart';
 import '../../core/di/injection_container.dart';
-import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
+import '../../data/repositories/shipping_address_repository.dart';
 
 /// Página para visualizar y editar una orden de venta existente
 class SaleOrderViewPage extends StatefulWidget {
@@ -1223,8 +1223,25 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     });
 
     try {
-      final partnerRepo = getIt<PartnerRepository>();
-      final addresses = await partnerRepo.getDeliveryAddresses(partnerId);
+      final shippingAddressRepo = getIt<ShippingAddressRepository>();
+      
+      // Primero intentar desde caché offline
+      final cachedAddresses = shippingAddressRepo.getCachedShippingAddressesForPartner(partnerId);
+      
+      if (cachedAddresses.isNotEmpty) {
+        print('📍 SALE_ORDER_VIEW: ${cachedAddresses.length} direcciones cargadas desde caché offline');
+        if (mounted) {
+          setState(() {
+            _deliveryAddresses = cachedAddresses;
+            _isLoadingAddresses = false;
+          });
+        }
+        return;
+      }
+      
+      // Si no hay caché, intentar desde servidor (solo si hay conexión)
+      print('📍 SALE_ORDER_VIEW: No hay caché offline, intentando desde servidor...');
+      final addresses = await shippingAddressRepo.getShippingAddressesForPartner(partnerId);
       
       if (mounted) {
         setState(() {
@@ -1234,10 +1251,27 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
       }
     } catch (e) {
       print('❌ Error cargando direcciones: $e');
-      if (mounted) {
-        setState(() {
-          _isLoadingAddresses = false;
-        });
+      
+      // Fallback: intentar desde caché general si falla la llamada al servidor
+      try {
+        final shippingAddressRepo = getIt<ShippingAddressRepository>();
+        final allCachedAddresses = shippingAddressRepo.getCachedShippingAddresses();
+        final partnerAddresses = allCachedAddresses.where((addr) => addr.commercialPartnerId == partnerId).toList();
+        
+        print('📍 SALE_ORDER_VIEW: Fallback - ${partnerAddresses.length} direcciones desde caché general');
+        if (mounted) {
+          setState(() {
+            _deliveryAddresses = partnerAddresses;
+            _isLoadingAddresses = false;
+          });
+        }
+      } catch (cacheError) {
+        print('❌ Error también en fallback de caché: $cacheError');
+        if (mounted) {
+          setState(() {
+            _isLoadingAddresses = false;
+          });
+        }
       }
     }
   }

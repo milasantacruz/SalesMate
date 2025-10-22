@@ -16,6 +16,7 @@ import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/pricelist_repository.dart';
 import '../../data/repositories/city_repository.dart';
+import '../../data/repositories/shipping_address_repository.dart';
 import '../../data/repositories/operation_queue_repository.dart';
 import '../../data/repositories/local_id_repository.dart';
 import '../../data/repositories/sync_coordinator_repository.dart';
@@ -369,6 +370,9 @@ Future<void> _setupRepositories() async {
       getIt<CustomOdooKv>(),
     ));
     
+    // Registrar ShippingAddressRepository en GetIt para acceso directo
+    getIt.registerLazySingleton<ShippingAddressRepository>(() => ShippingAddressRepository());
+    
     // Desregistrar SaleOrderRepository anterior si existe
     if (getIt.isRegistered<SaleOrderRepository>()) {
       getIt.unregister<SaleOrderRepository>();
@@ -451,6 +455,7 @@ Future<void> _setupRepositories() async {
           productRepo: getIt<ProductRepository>(),
           employeeRepo: getIt<EmployeeRepository>(),
           saleOrderRepo: getIt<SaleOrderRepository>(),
+          shippingAddressRepo: getIt<ShippingAddressRepository>(),
           markerStore: getIt<SyncMarkerStore>(),
           cache: getIt<OdooKv>(),
         ),

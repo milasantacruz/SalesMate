@@ -59,6 +59,8 @@ class SyncStateConverter {
         return BootstrapModule.products;
       case SyncModule.employees:
         return BootstrapModule.employees;
+      case SyncModule.shippingAddresses:
+        return BootstrapModule.shippingAddresses;
       case SyncModule.saleOrders:
         return BootstrapModule.saleOrders;
     }
@@ -73,6 +75,7 @@ class SyncStateConverter {
           BootstrapModule.partners,
           BootstrapModule.products,
           BootstrapModule.employees,
+          BootstrapModule.shippingAddresses,
           BootstrapModule.saleOrders,
         ])
           module: ModuleBootstrapStatus(

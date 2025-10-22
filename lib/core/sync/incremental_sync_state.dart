@@ -5,6 +5,7 @@ enum SyncModule {
   partners,
   products,
   employees,
+  shippingAddresses,
   saleOrders;
 
   /// Nombre del modelo en Odoo
@@ -16,6 +17,8 @@ enum SyncModule {
         return 'product.product';
       case SyncModule.employees:
         return 'hr.employee';
+      case SyncModule.shippingAddresses:
+        return 'res.partner.delivery';
       case SyncModule.saleOrders:
         return 'sale.order';
     }
@@ -30,6 +33,8 @@ enum SyncModule {
         return 'Products';
       case SyncModule.employees:
         return 'Employees';
+      case SyncModule.shippingAddresses:
+        return 'Shipping Addresses';
       case SyncModule.saleOrders:
         return 'Sale Orders';
     }

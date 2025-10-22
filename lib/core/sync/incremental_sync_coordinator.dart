@@ -3,6 +3,7 @@ import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
+import '../../data/repositories/shipping_address_repository.dart';
 import 'sync_marker_store.dart';
 import 'incremental_sync_state.dart';
 
@@ -18,6 +19,7 @@ class IncrementalSyncCoordinator {
   final ProductRepository _productRepo;
   final EmployeeRepository _employeeRepo;
   final SaleOrderRepository _saleOrderRepo;
+  final ShippingAddressRepository _shippingAddressRepo;
   final SyncMarkerStore _markerStore;
   final OdooKv _cache;
 
@@ -32,12 +34,14 @@ class IncrementalSyncCoordinator {
     required ProductRepository productRepo,
     required EmployeeRepository employeeRepo,
     required SaleOrderRepository saleOrderRepo,
+    required ShippingAddressRepository shippingAddressRepo,
     required SyncMarkerStore markerStore,
     required OdooKv cache,
   })  : _partnerRepo = partnerRepo,
         _productRepo = productRepo,
         _employeeRepo = employeeRepo,
         _saleOrderRepo = saleOrderRepo,
+        _shippingAddressRepo = shippingAddressRepo,
         _markerStore = markerStore,
         _cache = cache;
 
@@ -58,6 +62,7 @@ class IncrementalSyncCoordinator {
           _syncModule(SyncModule.partners),
           _syncModule(SyncModule.products),
           _syncModule(SyncModule.employees),
+          _syncModule(SyncModule.shippingAddresses),
           _syncModule(SyncModule.saleOrders),
         ],
         eagerError: false, // No fallar todo si un módulo falla
@@ -158,6 +163,8 @@ class IncrementalSyncCoordinator {
         return await _productRepo.fetchIncrementalRecords(sinceStr);
       case SyncModule.employees:
         return await _employeeRepo.fetchIncrementalRecords(sinceStr);
+      case SyncModule.shippingAddresses:
+        return await _shippingAddressRepo.fetchIncrementalRecords(sinceStr);
       case SyncModule.saleOrders:
         return await _saleOrderRepo.fetchIncrementalRecords(sinceStr);
     }
@@ -184,6 +191,9 @@ class IncrementalSyncCoordinator {
         break;
       case SyncModule.employees:
         cacheKey = 'Employee_records';
+        break;
+      case SyncModule.shippingAddresses:
+        cacheKey = 'ShippingAddress_records';
         break;
       case SyncModule.saleOrders:
         cacheKey = 'sale_orders';

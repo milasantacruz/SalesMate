@@ -17,7 +17,7 @@ import '../../data/models/create_sale_order_request.dart';
 import '../../data/models/sale_order_line_model.dart';
 import '../../data/models/partner_model.dart';
 import '../../data/models/product_model.dart';
-import '../../data/repositories/partner_repository.dart';
+import '../../data/repositories/shipping_address_repository.dart';
 
 /// Página para crear un nuevo pedido de venta
 class NuevoPedidoPage extends StatefulWidget {
@@ -67,8 +67,25 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     });
 
     try {
-      final partnerRepo = getIt<PartnerRepository>();
-      final addresses = await partnerRepo.getDeliveryAddresses(partnerId);
+      final shippingAddressRepo = getIt<ShippingAddressRepository>();
+      
+      // Primero intentar desde caché offline
+      final cachedAddresses = shippingAddressRepo.getCachedShippingAddressesForPartner(partnerId);
+      
+      if (cachedAddresses.isNotEmpty) {
+        print('📍 NUEVO_PEDIDO: ${cachedAddresses.length} direcciones cargadas desde caché offline');
+        if (mounted) {
+          setState(() {
+            _deliveryAddresses = cachedAddresses;
+            _isLoadingAddresses = false;
+          });
+        }
+        return;
+      }
+      
+      // Si no hay caché, intentar desde servidor (solo si hay conexión)
+      print('📍 NUEVO_PEDIDO: No hay caché offline, intentando desde servidor...');
+      final addresses = await shippingAddressRepo.getShippingAddressesForPartner(partnerId);
       
       if (mounted) {
         setState(() {
@@ -78,10 +95,37 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
       }
     } catch (e) {
       print('❌ Error cargando direcciones: $e');
-      if (mounted) {
-        setState(() {
-          _isLoadingAddresses = false;
-        });
+      
+      // Fallback: intentar desde caché general si falla la llamada al servidor
+      try {
+        final shippingAddressRepo = getIt<ShippingAddressRepository>();
+        final allCachedAddresses = shippingAddressRepo.getCachedShippingAddresses();
+        
+        print('📍 NUEVO_PEDIDO: Fallback - Total direcciones en caché: ${allCachedAddresses.length}');
+        print('📍 NUEVO_PEDIDO: Fallback - Buscando direcciones para partner: $partnerId');
+        
+        // Log de cada dirección para debugging
+        for (int i = 0; i < allCachedAddresses.length; i++) {
+          final addr = allCachedAddresses[i];
+          print('📍 NUEVO_PEDIDO: Fallback - Dirección $i: ID=${addr.id}, Name=${addr.name}, CommercialPartnerId=${addr.commercialPartnerId}');
+        }
+        
+        final partnerAddresses = allCachedAddresses.where((addr) => addr.commercialPartnerId == partnerId).toList();
+        
+        print('📍 NUEVO_PEDIDO: Fallback - ${partnerAddresses.length} direcciones filtradas para partner $partnerId');
+        if (mounted) {
+          setState(() {
+            _deliveryAddresses = partnerAddresses;
+            _isLoadingAddresses = false;
+          });
+        }
+      } catch (cacheError) {
+        print('❌ Error también en fallback de caché: $cacheError');
+        if (mounted) {
+          setState(() {
+            _isLoadingAddresses = false;
+          });
+        }
       }
     }
   }

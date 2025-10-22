@@ -104,13 +104,14 @@ class SyncMarkerStore {
 
   /// Verifica si existen marcadores para todos los módulos críticos
   /// 
-  /// Los módulos críticos son: partners, products, employees, sale_orders
+  /// Los módulos críticos son: partners, products, employees, shipping_addresses, sale_orders
   /// Si todos tienen marcador, significa que ya se hizo un bootstrap completo
   /// y podemos usar sincronización incremental
   bool hasAllCriticalMarkers() {
     return hasMarker('res.partner') &&
            hasMarker('product.product') &&
            hasMarker('hr.employee') &&
+           hasMarker('res.partner.delivery') &&
            hasMarker('sale.order');
   }
 
@@ -122,17 +123,20 @@ class SyncMarkerStore {
       final partnerCache = _cache.get('Partner_records');
       final productCache = _cache.get('Product_records');
       final employeeCache = _cache.get('Employee_records');
+      final shippingAddressCache = _cache.get('ShippingAddress_records');
       final saleOrderCache = _cache.get('sale_orders');
       
       print('🔍 SYNC_MARKER_STORE: Verificando caché:');
       print('   - Partners (Partner_records): ${partnerCache != null ? "✅" : "❌"}');
       print('   - Products (Product_records): ${productCache != null ? "✅" : "❌"}');
       print('   - Employees (Employee_records): ${employeeCache != null ? "✅" : "❌"}');
+      print('   - Shipping Addresses (ShippingAddress_records): ${shippingAddressCache != null ? "✅" : "❌"}');
       print('   - Sale Orders (sale_orders): ${saleOrderCache != null ? "✅" : "❌"}');
       
       return partnerCache != null &&
              productCache != null &&
              employeeCache != null &&
+             shippingAddressCache != null &&
              saleOrderCache != null;
     } catch (e) {
       print('⚠️ SYNC_MARKER_STORE: Error verificando caché: $e');

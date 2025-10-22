@@ -6,6 +6,7 @@ enum BootstrapModule {
   products,
   employees,
   saleOrders,
+  shippingAddresses,
   pricelists,
   cities,
 }

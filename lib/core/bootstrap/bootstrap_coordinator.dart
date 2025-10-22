@@ -12,6 +12,7 @@ import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
+import '../../data/repositories/shipping_address_repository.dart';
 import 'bootstrap_state.dart';
 import '../sync/sync_marker_store.dart';
 
@@ -23,6 +24,7 @@ class BootstrapCoordinator {
   final ProductRepository _productRepo;
   final EmployeeRepository _employeeRepo;
   final SaleOrderRepository _saleOrderRepo;
+  final ShippingAddressRepository _shippingAddressRepo;
 
   BootstrapCoordinator()
       : _netConn = getIt<NetworkConnectivity>(),
@@ -30,7 +32,8 @@ class BootstrapCoordinator {
         _partnerRepo = getIt<PartnerRepository>(),
         _productRepo = getIt<ProductRepository>(),
         _employeeRepo = getIt<EmployeeRepository>(),
-        _saleOrderRepo = getIt<SaleOrderRepository>();
+        _saleOrderRepo = getIt<SaleOrderRepository>(),
+        _shippingAddressRepo = getIt<ShippingAddressRepository>();
 
   /// Callback de progreso
   void Function(BootstrapState)? onProgress;
@@ -43,6 +46,7 @@ class BootstrapCoordinator {
     BootstrapModule.partners,
     BootstrapModule.products,
     BootstrapModule.employees,
+    BootstrapModule.shippingAddresses,
   };
 
   Future<BootstrapState> run({int pageSize = 200}) async {
@@ -61,6 +65,7 @@ class BootstrapCoordinator {
         print('   - Partners: ${_currentState.modules[BootstrapModule.partners]?.completed}');
         print('   - Products: ${_currentState.modules[BootstrapModule.products]?.completed}');
         print('   - Employees: ${_currentState.modules[BootstrapModule.employees]?.completed}');
+        print('   - Shipping Addresses: ${_currentState.modules[BootstrapModule.shippingAddresses]?.completed}');
         print('   - Sale Orders: ${_currentState.modules[BootstrapModule.saleOrders]?.completed}');
         onProgress!(_currentState);
       } else {
@@ -97,6 +102,10 @@ class BootstrapCoordinator {
         }),
         _bootstrapEmployees(pageSize).then((_) { 
           print('✅ COORDINATOR: Employees completado en paralelo');
+          report();
+        }),
+        _bootstrapShippingAddresses(pageSize).then((_) { 
+          print('✅ COORDINATOR: Shipping Addresses completado en paralelo');
           report();
         }),
       ]).timeout(const Duration(seconds: 30), onTimeout: () async {
@@ -555,6 +564,86 @@ class BootstrapCoordinator {
     final newMap = Map<BootstrapModule, ModuleBootstrapStatus>.from(state.modules)
       ..[module] = updated;
     return state.copyWith(modules: newMap);
+  }
+
+  /// Bootstrap de direcciones de despacho con paginación
+  Future<void> _bootstrapShippingAddresses(int pageSize) async {
+    try {
+      print('📍 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de shipping addresses con paginación...');
+      
+      int page = 1;
+      int offset = 0;
+      int totalFetched = 0;
+      final List<Map<String, dynamic>> allRecordsJson = []; // Acumular todos los registros
+      
+      while (true) {
+        print('📍 BOOTSTRAP_COORDINATOR: Página $page - offset: $offset, limit: $pageSize');
+        
+        final response = await _shippingAddressRepo.env.orpc.callKw({
+          'model': 'res.partner',
+          'method': 'search_read',
+          'args': [],
+          'kwargs': {
+            'context': {'bin_size': true},
+            'domain': [
+              ['active', '=', true],
+              ['type', '=', 'delivery']
+            ],
+            'fields': ['id', 'name', 'email', 'phone', 'is_company', 'customer_rank', 'supplier_rank', 'active', 'type', 'parent_id', 'commercial_partner_id', 'street', 'street2', 'city', 'city_id', 'state_id', 'country_id', 'zip'],
+            'limit': pageSize,
+            'offset': offset,
+            'order': 'name'
+          }
+        });
+        
+        final records = response as List<dynamic>;
+        final addresses = records.map((record) => _shippingAddressRepo.fromJson(record)).toList();
+        
+        print('📍 BOOTSTRAP_COORDINATOR: Página $page - ${addresses.length} registros obtenidos');
+        
+        if (addresses.isNotEmpty) {
+          // Acumular registros JSON para guardar todos al final
+          allRecordsJson.addAll(records.cast<Map<String, dynamic>>());
+          
+          totalFetched += addresses.length;
+          
+          // Actualizar estado
+          _currentState = _updateModule(_currentState, BootstrapModule.shippingAddresses, 
+            page, addresses.length, completed: false);
+        }
+        
+        // Si recibimos menos registros que el límite, es la última página
+        if (records.length < pageSize) {
+          print('📍 BOOTSTRAP_COORDINATOR: Última página alcanzada (${records.length} < $pageSize)');
+          break;
+        }
+        
+        page++;
+        offset += pageSize;
+      }
+      
+      // Guardar TODOS los registros acumulados en caché al final
+      if (allRecordsJson.isNotEmpty) {
+        await _shippingAddressRepo.cache.put('ShippingAddress_records', allRecordsJson);
+        print('📍 BOOTSTRAP_COORDINATOR: ${allRecordsJson.length} direcciones guardadas en caché');
+      }
+      
+      print('📍 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched shipping addresses en ${page - 1} página(s)');
+      
+      // Marcar como completado solo si obtuvimos registros
+      if (totalFetched > 0) {
+        _currentState = _updateModule(_currentState, BootstrapModule.shippingAddresses, 
+          page - 1, totalFetched, completed: true);
+      } else {
+        print('⚠️ BOOTSTRAP_COORDINATOR: No se obtuvieron shipping addresses');
+        _currentState = _failModule(_currentState, BootstrapModule.shippingAddresses, 
+          'No se obtuvieron shipping addresses');
+      }
+      
+    } catch (e) {
+      print('❌ BOOTSTRAP_COORDINATOR: Error en bootstrap de shipping addresses: $e');
+      _currentState = _failModule(_currentState, BootstrapModule.shippingAddresses, e.toString());
+    }
   }
 }
 
