@@ -14,11 +14,41 @@ class CookieClient extends http.BaseClient {
   /// Método auxiliar equivalente (por compatibilidad con quien llame getCookies)
   Map<String, String> getCookies() => Map.unmodifiable(_cookies);
 
+  /// 🔍 DEBUG FASE 1: Limpiar todas las cookies (para debugging)
+  void clearCookies() {
+    print('🧹 COOKIE_DEBUG: Limpiando todas las cookies del CookieClient');
+    print('🧹 COOKIE_DEBUG: Cookies antes de limpiar: $_cookies');
+    _cookies.clear();
+    print('🧹 COOKIE_DEBUG: Cookies después de limpiar: $_cookies');
+  }
+
+  /// 🔍 DEBUG FASE 1: Verificar estado de cookies
+  void debugCookies() {
+    print('🔍 COOKIE_DEBUG: Estado actual de cookies:');
+    print('🔍 COOKIE_DEBUG: Número de cookies: ${_cookies.length}');
+    if (_cookies.isNotEmpty) {
+      print('🔍 COOKIE_DEBUG: Cookies detalladas:');
+      _cookies.forEach((key, value) {
+        print('🔍 COOKIE_DEBUG:   - $key: $value');
+      });
+    } else {
+      print('🔍 COOKIE_DEBUG: ✅ No hay cookies almacenadas');
+    }
+  }
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     print('🚀 ANDROID: Iniciando request a ${request.url}');
     print('📋 ANDROID: Método: ${request.method}');
     print('📋 ANDROID: Headers: ${request.headers}');
+    
+    // 🔍 DEBUG FASE 1: Detectar peticiones a LicenseService
+    if (request.url.toString().contains('app.proandsys.net')) {
+      print('🔑 LICENSE_REQUEST: ⚠️ Petición a LicenseService detectada en CookieClient');
+      print('🔑 LICENSE_REQUEST: URL completa: ${request.url}');
+      print('🔑 LICENSE_REQUEST: Headers antes de procesamiento: ${request.headers}');
+      print('🔑 LICENSE_REQUEST: Cookies actuales: $_cookies');
+    }
     
     // 🔥 CRÍTICO: Interceptar el body del request para análisis
     if (request is http.Request && request.body.isNotEmpty) {
@@ -32,8 +62,20 @@ class CookieClient extends http.BaseClient {
           .join('; ');
       request.headers['Cookie'] = cookieHeader;
       print('🍪 ANDROID: Enviando cookies: $cookieHeader');
+      
+      // 🔍 DEBUG FASE 1: Verificar si las cookies interfieren con LicenseService
+      if (request.url.toString().contains('app.proandsys.net')) {
+        print('🔑 LICENSE_REQUEST: ⚠️ Cookies agregadas a petición de LicenseService');
+        print('🔑 LICENSE_REQUEST: Headers finales después de cookies: ${request.headers}');
+        print('🔑 LICENSE_REQUEST: Esto podría causar el error 401');
+      }
     } else {
       print('🍪 ANDROID: No hay cookies para enviar');
+      
+      // 🔍 DEBUG FASE 1: Confirmar que no hay cookies para LicenseService
+      if (request.url.toString().contains('app.proandsys.net')) {
+        print('🔑 LICENSE_REQUEST: ✅ No hay cookies para LicenseService (correcto)');
+      }
     }
 
     try {
@@ -41,6 +83,17 @@ class CookieClient extends http.BaseClient {
       final response = await _inner.send(request);
       print('✅ ANDROID: Response recibida - Status: ${response.statusCode}');
       print('📋 ANDROID: Response headers: ${response.headers}');
+      
+      // 🔍 DEBUG FASE 1: Logs específicos para LicenseService
+      if (request.url.toString().contains('app.proandsys.net')) {
+        print('🔑 LICENSE_RESPONSE: Status code: ${response.statusCode}');
+        print('🔑 LICENSE_RESPONSE: Headers de respuesta: ${response.headers}');
+        if (response.statusCode == 401) {
+          print('🔑 LICENSE_RESPONSE: ❌ ERROR 401 CONFIRMADO - Cookies interfieren');
+        } else {
+          print('🔑 LICENSE_RESPONSE: ✅ Petición exitosa');
+        }
+      }
       
       // Log especial para llamadas a call_kw
       if (request.url.path.contains('call_kw')) {

@@ -289,6 +289,29 @@ Future<void> logout() async {
     print('   - UserId: $userIdAfter');
     print('   - Database: $databaseAfter');
     
+    // 🔍 DEBUG FASE 1: Limpiar cookies del CookieClient antes de desregistrar
+    print('🧹 DEBUG FASE 1: Limpiando cookies del CookieClient...');
+    try {
+      final client = getIt<OdooClient>();
+      if (client.httpClient.runtimeType.toString().contains('CookieClient')) {
+        // Acceder al CookieClient y limpiar sus cookies
+        final cookieClient = client.httpClient as dynamic;
+        if (cookieClient.clearCookies != null) {
+          cookieClient.clearCookies();
+          print('🧹 DEBUG FASE 1: ✅ Cookies del CookieClient limpiadas');
+        } else {
+          print('🧹 DEBUG FASE 1: ⚠️ Método clearCookies no disponible');
+        }
+        if (cookieClient.debugCookies != null) {
+          cookieClient.debugCookies();
+        }
+      } else {
+        print('🧹 DEBUG FASE 1: ⚠️ Cliente no es CookieClient: ${client.httpClient.runtimeType}');
+      }
+    } catch (e) {
+      print('🧹 DEBUG FASE 1: ❌ Error limpiando cookies: $e');
+    }
+
     // Desregistrar dependencias que requieren autenticación
     print('🗑️ Desregistrando dependencias...');
     if (getIt.isRegistered<PartnerRepository>()) {

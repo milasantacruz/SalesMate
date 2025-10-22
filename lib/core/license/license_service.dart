@@ -91,19 +91,41 @@ class LicenseService {
   final String baseUrl;
   final String apiKey;
   
+  // 🔍 DEBUG FASE 1: Contador para distinguir primera carga vs post-logout
+  static int _requestCount = 0;
+  
   const LicenseService({
     this.baseUrl = 'http://app.proandsys.net/api/webhook/license',
     this.apiKey = 'lw_prod_8f4a2c1d9e6b3a5f7e2c8d4a1b6f9e3c',
   });
 
   Future<LicenseInfo> fetchLicense(String licenseNumber) async {
+    _requestCount++;
     print('🔑 LICENSE_SERVICE: Iniciando validación de licencia: $licenseNumber');
+    
+    // 🔍 DEBUG FASE 1: Verificar si es primera carga o post-logout
+    print('🔍 DEBUG FASE 1: Verificando contexto de la petición...');
+    print('🔍 DEBUG FASE 1: Request #$_requestCount');
+    if (_requestCount == 1) {
+      print('🔍 DEBUG FASE 1: 🆕 PRIMERA CARGA - Sin cookies residuales');
+    } else {
+      print('🔍 DEBUG FASE 1: 🔄 POST-LOGOUT - Posibles cookies residuales');
+    }
+    print('🔍 DEBUG FASE 1: API Key: $apiKey');
+    print('🔍 DEBUG FASE 1: Base URL: $baseUrl');
     
     final url = Uri.parse('$baseUrl/$licenseNumber');
     print('🌐 LICENSE_SERVICE: URL completa: $url');
     print('📤 LICENSE_SERVICE: Headers de petición:');
     print('   - Accept: application/json');
     print('   - Authorization: Bearer $apiKey');
+    
+    // 🔍 DEBUG FASE 1: Verificar que el API key no esté corrupto
+    if (apiKey != 'lw_prod_8f4a2c1d9e6b3a5f7e2c8d4a1b6f9e3c') {
+      print('🔍 DEBUG FASE 1: ⚠️ API Key modificado: $apiKey');
+    } else {
+      print('🔍 DEBUG FASE 1: ✅ API Key correcto');
+    }
     
     try {
       final resp = await http.get(url, headers: {
@@ -114,6 +136,22 @@ class LicenseService {
       print('📥 LICENSE_SERVICE: Status code recibido: ${resp.statusCode}');
       print('📥 LICENSE_SERVICE: Headers de respuesta: ${resp.headers}');
       print('📥 LICENSE_SERVICE: Body de respuesta: ${resp.body}');
+
+      // 🔍 DEBUG FASE 1: Análisis detallado del error 401
+      if (resp.statusCode == 401) {
+        print('🔍 DEBUG FASE 1: ❌ ERROR 401 DETECTADO');
+        print('🔍 DEBUG FASE 1: Request #$_requestCount');
+        print('🔍 DEBUG FASE 1: Headers enviados: Accept=application/json, Authorization=Bearer $apiKey');
+        print('🔍 DEBUG FASE 1: Headers de respuesta: ${resp.headers}');
+        print('🔍 DEBUG FASE 1: Body de error: ${resp.body}');
+        if (_requestCount == 1) {
+          print('🔍 DEBUG FASE 1: ⚠️ ERROR EN PRIMERA CARGA - Problema no relacionado con cookies');
+        } else {
+          print('🔍 DEBUG FASE 1: ⚠️ ERROR EN POST-LOGOUT - Posible causa: Cookies del CookieClient interfieren');
+        }
+      } else {
+        print('🔍 DEBUG FASE 1: ✅ Request #$_requestCount exitoso');
+      }
 
       if (resp.statusCode != 200) {
         print('❌ LICENSE_SERVICE: Error HTTP ${resp.statusCode}');
