@@ -95,7 +95,7 @@ class LicenseService {
   static int _requestCount = 0;
   
   const LicenseService({
-    this.baseUrl = 'http://app.proandsys.net/api/webhook/license',
+    this.baseUrl = 'https://app.proandsys.net/api/webhook/license',
     this.apiKey = 'lw_prod_8f4a2c1d9e6b3a5f7e2c8d4a1b6f9e3c',
   });
 
@@ -117,8 +117,10 @@ class LicenseService {
     final url = Uri.parse('$baseUrl/$licenseNumber');
     print('🌐 LICENSE_SERVICE: URL completa: $url');
     print('📤 LICENSE_SERVICE: Headers de petición:');
-    print('   - Accept: application/json');
     print('   - Authorization: Bearer $apiKey');
+    print('   - User-Agent: PostmanRuntime/7.32.3');
+    print('   - Accept: */*');
+    print('   - Cache-Control: no-cache');
     
     // 🔍 DEBUG FASE 1: Verificar que el API key no esté corrupto
     if (apiKey != 'lw_prod_8f4a2c1d9e6b3a5f7e2c8d4a1b6f9e3c') {
@@ -128,10 +130,15 @@ class LicenseService {
     }
     
     try {
-      final resp = await http.get(url, headers: {
-        'Accept': 'application/json',
+      final client = http.Client();
+      final resp = await client.get(url, headers: {
         'Authorization': 'Bearer $apiKey',
-      });
+        //'User-Agent': 'PostmanRuntime/7.32.3',
+        'Accept': '*/*',
+        //'Cache-Control': 'no-cache',
+      }).timeout(const Duration(seconds: 30));
+      
+      client.close();
       
       print('📥 LICENSE_SERVICE: Status code recibido: ${resp.statusCode}');
       print('📥 LICENSE_SERVICE: Headers de respuesta: ${resp.headers}');
