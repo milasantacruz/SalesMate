@@ -1,7 +1,6 @@
 import 'package:odoo_repository/odoo_repository.dart';
 import '../models/partner_model.dart';
 import 'offline_odoo_repository.dart';
-import '../../core/di/injection_container.dart';
 import '../../core/network/network_connectivity.dart';
 
 /// Repository para manejar direcciones de despacho (shipping addresses)
@@ -18,7 +17,11 @@ class ShippingAddressRepository extends OfflineOdooRepository<Partner> {
     'city', 'city_id', 'state_id', 'country_id', 'zip'
   ];
 
-  ShippingAddressRepository() : super(getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<OdooKv>());
+  ShippingAddressRepository(
+    OdooEnvironment env,
+    NetworkConnectivity networkConnectivity,
+    OdooKv kv,
+  ) : super(env, networkConnectivity, kv);
 
   @override
   Partner fromJson(Map<String, dynamic> json) => Partner.fromJson(json);

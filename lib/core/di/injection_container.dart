@@ -393,8 +393,17 @@ Future<void> _setupRepositories() async {
       getIt<CustomOdooKv>(),
     ));
     
+    // Desregistrar ShippingAddressRepository anterior si existe
+    if (getIt.isRegistered<ShippingAddressRepository>()) {
+      getIt.unregister<ShippingAddressRepository>();
+    }
+    
     // Registrar ShippingAddressRepository en GetIt para acceso directo
-    getIt.registerLazySingleton<ShippingAddressRepository>(() => ShippingAddressRepository());
+    getIt.registerLazySingleton<ShippingAddressRepository>(() => ShippingAddressRepository(
+      env,
+      getIt<NetworkConnectivity>(),
+      getIt<CustomOdooKv>(),
+    ));
     
     // Desregistrar SaleOrderRepository anterior si existe
     if (getIt.isRegistered<SaleOrderRepository>()) {

@@ -145,6 +145,7 @@ class BootstrapCoordinator {
         'res.partner': now,
         'product.product': now,
         'hr.employee': now,
+        'res.partner.delivery': now,
         'sale.order': now,
       });
       

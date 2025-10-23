@@ -108,11 +108,28 @@ class SyncMarkerStore {
   /// Si todos tienen marcador, significa que ya se hizo un bootstrap completo
   /// y podemos usar sincronización incremental
   bool hasAllCriticalMarkers() {
-    return hasMarker('res.partner') &&
-           hasMarker('product.product') &&
-           hasMarker('hr.employee') &&
-           hasMarker('res.partner.delivery') &&
-           hasMarker('sale.order');
+    final hasPartner = hasMarker('res.partner');
+    final hasProduct = hasMarker('product.product');
+    final hasEmployee = hasMarker('hr.employee');
+    final hasShipping = hasMarker('res.partner.delivery');
+    final hasSaleOrder = hasMarker('sale.order');
+    
+    final result = hasPartner && hasProduct && hasEmployee && hasShipping && hasSaleOrder;
+    
+    if (!result) {
+      final allMarkers = _getAllMarkers();
+      print('⚠️ SYNC_MARKER_STORE: Marcadores incompletos');
+      print('   Disponibles: ${allMarkers.keys.toList()}');
+      print('   Faltantes: ${[
+        if (!hasPartner) 'res.partner',
+        if (!hasProduct) 'product.product',
+        if (!hasEmployee) 'hr.employee',
+        if (!hasShipping) 'res.partner.delivery',
+        if (!hasSaleOrder) 'sale.order',
+      ]}');
+    }
+    
+    return result;
   }
 
   /// Verifica si la caché tiene contenido válido
