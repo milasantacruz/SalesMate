@@ -8,6 +8,7 @@ import '../di/injection_container.dart';
 import '../network/network_connectivity.dart';
 import '../cache/custom_odoo_kv.dart';
 import '../session/session_ready.dart';
+import '../tenant/tenant_storage_config.dart';
 import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/employee_repository.dart';
@@ -231,7 +232,7 @@ class BootstrapCoordinator {
         
         // Loop de paginación
         while (true) {
-          print('👥 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
+          // print('👥 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
           
           // Hacer llamada directa a search_read con offset y limit
           final response = await _partnerRepo.env.orpc.callKw({
@@ -253,7 +254,7 @@ class BootstrapCoordinator {
           
           final pageRecords = response as List<dynamic>;
           final pageCount = pageRecords.length;
-          print('👥 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
+          // print('👥 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
           
           // Agregar a la lista acumulada
           allRecordsJson.addAll(pageRecords.cast<Map<String, dynamic>>());
@@ -282,7 +283,12 @@ class BootstrapCoordinator {
         _partnerRepo.latestRecords = allPartners;
         
         // Guardar en caché
-        await _cache.put('Partner_records', allRecordsJson);
+        // ✅ v2.0: Usar tenantCache si está disponible
+        if (_partnerRepo.tenantCache != null) {
+          await _partnerRepo.tenantCache!.put('Partner_records', allRecordsJson);
+        } else {
+          await _cache.put('Partner_records', allRecordsJson);
+        }
         
         print('👥 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched partners en $page página(s)');
         
@@ -314,7 +320,7 @@ class BootstrapCoordinator {
         
         // Loop de paginación
         while (true) {
-          print('📦 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
+          // print('📦 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
           
           // Hacer llamada directa a search_read con offset y limit
           final response = await _productRepo.env.orpc.callKw({
@@ -335,7 +341,7 @@ class BootstrapCoordinator {
           
           final pageRecords = response as List<dynamic>;
           final pageCount = pageRecords.length;
-          print('📦 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
+          // print('📦 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
           
           // Agregar a la lista acumulada
           allRecordsJson.addAll(pageRecords.cast<Map<String, dynamic>>());
@@ -364,7 +370,12 @@ class BootstrapCoordinator {
         _productRepo.latestRecords = allProducts;
         
         // Guardar en caché
-        await _cache.put('Product_records', allRecordsJson);
+        // ✅ v2.0: Usar tenantCache si está disponible
+        if (_productRepo.tenantCache != null) {
+          await _productRepo.tenantCache!.put('Product_records', allRecordsJson);
+        } else {
+          await _cache.put('Product_records', allRecordsJson);
+        }
         
         print('📦 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched productos en $page página(s)');
         
@@ -402,7 +413,7 @@ class BootstrapCoordinator {
       
       // Loop de paginación
       while (true) {
-        print('👨‍💼 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
+        // print('👨‍💼 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
         
         // Hacer llamada directa a search_read con offset y limit
         final response = await _employeeRepo.env.orpc.callKw({
@@ -423,7 +434,7 @@ class BootstrapCoordinator {
         
         final pageRecords = response as List<dynamic>;
         final pageCount = pageRecords.length;
-        print('👨‍💼 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
+        // print('👨‍💼 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
         
         // Agregar a la lista acumulada
         allRecordsJson.addAll(pageRecords.cast<Map<String, dynamic>>());
@@ -452,7 +463,12 @@ class BootstrapCoordinator {
       _employeeRepo.latestRecords = allEmployees;
       
       // Guardar en caché
-      await _cache.put('Employee_records', allRecordsJson);
+      // ✅ v2.0: Usar tenantCache si está disponible
+      if (_employeeRepo.tenantCache != null) {
+        await _employeeRepo.tenantCache!.put('Employee_records', allRecordsJson);
+      } else {
+        await _cache.put('Employee_records', allRecordsJson);
+      }
       
       print('👨‍💼 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched employees en $page página(s)');
       
@@ -475,9 +491,13 @@ class BootstrapCoordinator {
     try {
       print('🛒 BOOTSTRAP_COORDINATOR: Iniciando bootstrap de sale orders con paginación...');
       
+      // ✅ v2.0: Aplicar filtrado temporal (6 meses) para reducir tamaño de cache
+      final temporalDomain = TenantStorageConfig.getSaleOrdersDateDomain();
+      print('📅 BOOTSTRAP_COORDINATOR: Filtro temporal aplicado: últimos ${TenantStorageConfig.saleOrdersMonthsBack} meses');
+      
       // Loop de paginación
       while (true) {
-        print('🛒 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
+        // print('🛒 BOOTSTRAP_COORDINATOR: Página ${page + 1} - offset: $offset, limit: $pageSize');
         
         // Hacer llamada directa a search_read con offset y limit
         final response = await _saleOrderRepo.env.orpc.callKw({
@@ -488,6 +508,7 @@ class BootstrapCoordinator {
             'context': {'bin_size': true},
             'domain': [
               ['state', '!=', 'cancel'], // Excluir órdenes canceladas
+              ...temporalDomain, // ✅ v2.0: Filtrar por fecha (últimos 6 meses)
             ],
             'fields': _saleOrderRepo.oFields,
             'limit': pageSize,
@@ -498,7 +519,7 @@ class BootstrapCoordinator {
         
         final pageRecords = response as List<dynamic>;
         final pageCount = pageRecords.length;
-        print('🛒 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
+        // print('🛒 BOOTSTRAP_COORDINATOR: Página ${page + 1} - ${pageCount} registros obtenidos');
         
         // Agregar a la lista acumulada
         allRecordsJson.addAll(pageRecords.cast<Map<String, dynamic>>());
@@ -527,7 +548,12 @@ class BootstrapCoordinator {
       _saleOrderRepo.latestRecords = allSaleOrders;
       
       // Guardar en caché
-      await _cache.put('sale_orders', allRecordsJson);
+      // ✅ v2.0: Usar tenantCache si está disponible
+      if (_saleOrderRepo.tenantCache != null) {
+        await _saleOrderRepo.tenantCache!.put('sale_orders', allRecordsJson);
+      } else {
+        await _cache.put('sale_orders', allRecordsJson);
+      }
       
       print('🛒 BOOTSTRAP_COORDINATOR: Bootstrap completado - Total: $totalFetched sale orders en $page página(s)');
       
@@ -578,7 +604,7 @@ class BootstrapCoordinator {
       final List<Map<String, dynamic>> allRecordsJson = []; // Acumular todos los registros
       
       while (true) {
-        print('📍 BOOTSTRAP_COORDINATOR: Página $page - offset: $offset, limit: $pageSize');
+        // print('📍 BOOTSTRAP_COORDINATOR: Página $page - offset: $offset, limit: $pageSize');
         
         final response = await _shippingAddressRepo.env.orpc.callKw({
           'model': 'res.partner',
@@ -625,7 +651,12 @@ class BootstrapCoordinator {
       
       // Guardar TODOS los registros acumulados en caché al final
       if (allRecordsJson.isNotEmpty) {
-        await _shippingAddressRepo.cache.put('ShippingAddress_records', allRecordsJson);
+        // ✅ v2.0: Usar tenantCache si está disponible
+        if (_shippingAddressRepo.tenantCache != null) {
+          await _shippingAddressRepo.tenantCache!.put('ShippingAddress_records', allRecordsJson);
+        } else {
+          await _shippingAddressRepo.cache.put('ShippingAddress_records', allRecordsJson);
+        }
         print('📍 BOOTSTRAP_COORDINATOR: ${allRecordsJson.length} direcciones guardadas en caché');
       }
       

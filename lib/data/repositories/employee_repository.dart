@@ -11,8 +11,12 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
   late final OdooCallQueueRepository _callQueue;
   List<dynamic> get oDomain => [['active', '=', true]];
 
-  EmployeeRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache) {
+  EmployeeRepository(
+    OdooEnvironment env,
+    NetworkConnectivity netConn,
+    OdooKv cache, {
+    super.tenantCache,
+  }) : super(env, netConn, cache) {
     _callQueue = getIt<OdooCallQueueRepository>();
   }
 

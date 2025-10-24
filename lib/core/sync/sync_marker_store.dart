@@ -1,15 +1,22 @@
 import 'package:odoo_repository/odoo_repository.dart';
+import '../tenant/tenant_aware_cache.dart';
 
 /// Store para gestionar marcadores de última sincronización por modelo
 /// 
 /// Los marcadores se guardan en formato ISO8601 (UTC) para cada modelo de Odoo.
 /// Esto permite implementar sincronización incremental: solo fetch de registros
 /// modificados desde el último marcador.
+/// 
+/// ✅ v2.0: USA TenantAwareCache para aislar marcadores por licencia
 class SyncMarkerStore {
   final OdooKv _cache;
+  final TenantAwareCache? _tenantCache;
+  
+  // ✅ v2.0: Key base sin prefijo (tenantCache agrega el prefijo automáticamente)
   static const String _markerKey = 'sync_markers';
 
-  SyncMarkerStore(this._cache);
+  SyncMarkerStore(this._cache, {TenantAwareCache? tenantCache})
+      : _tenantCache = tenantCache;
 
   /// Obtiene el marcador de sincronización para un modelo
   /// 
@@ -32,7 +39,14 @@ class SyncMarkerStore {
   Future<void> setMarker(String model, DateTime timestamp) async {
     final markers = _getAllMarkers();
     markers[model] = timestamp.toUtc().toIso8601String();
-    await _cache.put(_markerKey, markers);
+    
+    // ✅ v2.0: Usar tenantCache si está disponible
+    if (_tenantCache != null) {
+      await _tenantCache!.put(_markerKey, markers);
+    } else {
+      await _cache.put(_markerKey, markers);
+    }
+    
     print('✅ SYNC_MARKER_STORE: Marcador guardado para $model: ${timestamp.toUtc().toIso8601String()}');
   }
 
@@ -44,7 +58,14 @@ class SyncMarkerStore {
     for (final entry in markers.entries) {
       currentMarkers[entry.key] = entry.value.toUtc().toIso8601String();
     }
-    await _cache.put(_markerKey, currentMarkers);
+    
+    // ✅ v2.0: Usar tenantCache si está disponible
+    if (_tenantCache != null) {
+      await _tenantCache!.put(_markerKey, currentMarkers);
+    } else {
+      await _cache.put(_markerKey, currentMarkers);
+    }
+    
     print('✅ SYNC_MARKER_STORE: ${markers.length} marcadores guardados');
   }
 
@@ -52,13 +73,26 @@ class SyncMarkerStore {
   Future<void> clearMarker(String model) async {
     final markers = _getAllMarkers();
     markers.remove(model);
-    await _cache.put(_markerKey, markers);
+    
+    // ✅ v2.0: Usar tenantCache si está disponible
+    if (_tenantCache != null) {
+      await _tenantCache!.put(_markerKey, markers);
+    } else {
+      await _cache.put(_markerKey, markers);
+    }
+    
     print('🗑️ SYNC_MARKER_STORE: Marcador eliminado para $model');
   }
 
   /// Limpia todos los marcadores (para forzar full sync de todos los modelos)
   Future<void> clearAllMarkers() async {
-    await _cache.delete(_markerKey);
+    // ✅ v2.0: Usar tenantCache si está disponible
+    if (_tenantCache != null) {
+      await _tenantCache!.delete(_markerKey);
+    } else {
+      await _cache.delete(_markerKey);
+    }
+    
     print('🗑️ SYNC_MARKER_STORE: Todos los marcadores eliminados');
   }
 
@@ -85,7 +119,11 @@ class SyncMarkerStore {
 
   /// Obtiene todos los marcadores (interno)
   Map<String, String> _getAllMarkers() {
-    final data = _cache.get(_markerKey, defaultValue: <String, String>{});
+    // ✅ v2.0: Usar tenantCache si está disponible
+    final data = _tenantCache != null
+        ? _tenantCache!.get(_markerKey, defaultValue: <String, String>{})
+        : _cache.get(_markerKey, defaultValue: <String, String>{});
+    
     if (data is Map) {
       return Map<String, String>.from(data);
     }
@@ -137,11 +175,22 @@ class SyncMarkerStore {
   /// Útil para detectar si tenemos marcadores pero la caché está corrupta
   bool hasCacheContent() {
     try {
-      final partnerCache = _cache.get('Partner_records');
-      final productCache = _cache.get('Product_records');
-      final employeeCache = _cache.get('Employee_records');
-      final shippingAddressCache = _cache.get('ShippingAddress_records');
-      final saleOrderCache = _cache.get('sale_orders');
+      // ✅ v2.0: Usar tenantCache si está disponible
+      final partnerCache = _tenantCache != null
+          ? _tenantCache!.get('Partner_records')
+          : _cache.get('Partner_records');
+      final productCache = _tenantCache != null
+          ? _tenantCache!.get('Product_records')
+          : _cache.get('Product_records');
+      final employeeCache = _tenantCache != null
+          ? _tenantCache!.get('Employee_records')
+          : _cache.get('Employee_records');
+      final shippingAddressCache = _tenantCache != null
+          ? _tenantCache!.get('ShippingAddress_records')
+          : _cache.get('ShippingAddress_records');
+      final saleOrderCache = _tenantCache != null
+          ? _tenantCache!.get('sale_orders')
+          : _cache.get('sale_orders');
       
       print('🔍 SYNC_MARKER_STORE: Verificando caché:');
       print('   - Partners (Partner_records): ${partnerCache != null ? "✅" : "❌"}');

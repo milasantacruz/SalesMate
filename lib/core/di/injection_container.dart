@@ -24,6 +24,9 @@ import '../../data/repositories/odoo_call_queue_repository.dart';
 import '../bootstrap/bootstrap_coordinator.dart';
 import '../sync/sync_marker_store.dart';
 import '../sync/incremental_sync_coordinator.dart';
+import '../tenant/tenant_aware_cache.dart';
+import '../tenant/tenant_admin_service.dart';
+import '../tenant/tenant_context.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -41,6 +44,15 @@ Future<void> init() async {
   
   // Registrar también como OdooKv (interfaz base) para compatibilidad
   getIt.registerSingleton<OdooKv>(customCache);
+  
+  // Tenant management - Single-Tenant v2.0
+  getIt.registerLazySingleton<TenantAwareCache>(
+    () => TenantAwareCache(getIt<CustomOdooKv>())
+  );
+  
+  getIt.registerLazySingleton<TenantAdminService>(
+    () => TenantAdminService(getIt<TenantAwareCache>())
+  );
 
   // Inicializar OperationQueueRepository
   final operationQueueRepo = OperationQueueRepository();
@@ -75,6 +87,7 @@ Future<bool> loginWithCredentials({
   required String password,
   String? serverUrl,
   String? database,
+  String? licenseNumber,  // ← NUEVO v2.0: Para tenant management
 }) async {
   try {
     var client = getIt<OdooClient>();
@@ -179,13 +192,13 @@ Future<bool> loginWithCredentials({
           );
           
           print('✅ Session corregida creada con ID: ${fixedSession.id}');
-          return await _handleAuthenticateResponse(fixedSession, username, password, database, cache);
+          return await _handleAuthenticateResponse(fixedSession, username, password, database, cache, licenseNumber);
         } else {
           print('❌ No se pudo interceptar session_id');
         }
       }
       
-      return await _handleAuthenticateResponse(session, username, password, database, cache);
+      return await _handleAuthenticateResponse(session, username, password, database, cache, licenseNumber);
     } catch (e) {
       print('❌ Exception during authenticate: $e');
       print('🤖 ANDROID DEBUG - Error detallado:');
@@ -259,6 +272,10 @@ Future<void> logout() async {
   try {
     print('🚪 Iniciando proceso de logout...');
     final cache = getIt<CustomOdooKv>();
+    
+    // ✅ NUEVO v2.0: Limpiar contexto de tenant (NO limpia cache de datos)
+    TenantContext.clearTenant();
+    print('🏢 TENANT: Contexto limpiado - Cache de datos preservado');
     
     // Verificar qué hay en caché antes de limpiar
     print('🔍 Verificando caché antes de limpiar:');
@@ -379,6 +396,7 @@ Future<void> _setupRepositories() async {
       env,
       getIt<NetworkConnectivity>(),
       getIt<CustomOdooKv>(),
+      tenantCache: getIt<TenantAwareCache>(),
     ));
     
     // Desregistrar EmployeeRepository anterior si existe
@@ -391,6 +409,7 @@ Future<void> _setupRepositories() async {
       env,
       getIt<NetworkConnectivity>(),
       getIt<CustomOdooKv>(),
+      tenantCache: getIt<TenantAwareCache>(),
     ));
     
     // Desregistrar ShippingAddressRepository anterior si existe
@@ -403,6 +422,7 @@ Future<void> _setupRepositories() async {
       env,
       getIt<NetworkConnectivity>(),
       getIt<CustomOdooKv>(),
+      tenantCache: getIt<TenantAwareCache>(),
     ));
     
     // Desregistrar SaleOrderRepository anterior si existe
@@ -415,6 +435,7 @@ Future<void> _setupRepositories() async {
       env,
       getIt<NetworkConnectivity>(),
       getIt<CustomOdooKv>(),
+      tenantCache: getIt<TenantAwareCache>(),
     ));
     
     // Desregistrar ProductRepository anterior si existe
@@ -427,6 +448,7 @@ Future<void> _setupRepositories() async {
       env,
       getIt<NetworkConnectivity>(),
       getIt<CustomOdooKv>(),
+      tenantCache: getIt<TenantAwareCache>(),
     ));
     
     // Desregistrar PricelistRepository anterior si existe
@@ -474,7 +496,7 @@ Future<void> _setupRepositories() async {
     // Registrar SyncMarkerStore para sincronización incremental
     if (!getIt.isRegistered<SyncMarkerStore>()) {
       getIt.registerLazySingleton<SyncMarkerStore>(
-        () => SyncMarkerStore(getIt<OdooKv>()),
+        () => SyncMarkerStore(getIt<OdooKv>(), tenantCache: getIt<TenantAwareCache>()),
       );
       print('✅ SyncMarkerStore registrado');
     }
@@ -694,6 +716,7 @@ Future<bool> _handleAuthenticateResponse(
   String password,
   String? database,
   CustomOdooKv cache,
+  String? licenseNumber,  // ← NUEVO v2.0: Para tenant management
 ) async {
   final client = getIt<OdooClient>();
   
@@ -707,6 +730,35 @@ Future<bool> _handleAuthenticateResponse(
   if (session != null) {
     print('✅ Login exitoso! User ID: ${session.userId}');
     print('👤 Username: ${session.userName}');
+    
+    // ✅ NUEVO v2.0: Detectar cambio de licencia y limpiar cache anterior
+    if (licenseNumber != null && licenseNumber.isNotEmpty) {
+      print('🏢 TENANT: Procesando tenant para licencia: $licenseNumber');
+      
+      final previousLicense = TenantContext.setTenant(
+        licenseNumber,
+        database ?? AppConstants.odooDbName,
+      );
+      
+      if (previousLicense != null) {
+        // ⚠️ Cambio de licencia detectado - Limpiar cache anterior
+        print('🔄 LOGIN: Cambio de licencia detectado: $previousLicense → $licenseNumber');
+        print('🧹 LOGIN: Limpiando cache de licencia anterior...');
+        
+        final tenantCache = getIt<TenantAwareCache>();
+        await tenantCache.clearTenant(previousLicense);
+        
+        print('✅ LOGIN: Cache de $previousLicense eliminado completamente');
+        print('📦 LOGIN: Ahora se hará bootstrap completo para $licenseNumber');
+      } else {
+        print('✅ LOGIN: Misma licencia ($licenseNumber) - Cache preservado');
+      }
+      
+      // Guardar licenseNumber en cache para referencia
+      await cache.put('licenseNumber', licenseNumber);
+    } else {
+      print('⚠️ LOGIN: No se proporcionó licenseNumber - Tenant management deshabilitado');
+    }
     
     // VALIDACIÓN ESTRICTA: El servidor DEBE retornar session_id válido
     if (session.id.isEmpty) {
@@ -833,7 +885,10 @@ void initAuthScope(OdooSession session) {
   }
   getIt.registerLazySingleton<PartnerRepository>(
     () => PartnerRepository(
-        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+        getIt<OdooEnvironment>(),
+        getIt<NetworkConnectivity>(),
+        getIt<CustomOdooKv>(),
+        tenantCache: getIt<TenantAwareCache>()),
   );
 
   if (getIt.isRegistered<EmployeeRepository>()) {
@@ -841,7 +896,10 @@ void initAuthScope(OdooSession session) {
   }
   getIt.registerLazySingleton<EmployeeRepository>(
     () => EmployeeRepository(
-        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+        getIt<OdooEnvironment>(),
+        getIt<NetworkConnectivity>(),
+        getIt<CustomOdooKv>(),
+        tenantCache: getIt<TenantAwareCache>()),
   );
 
   if (getIt.isRegistered<SaleOrderRepository>()) {
@@ -849,7 +907,10 @@ void initAuthScope(OdooSession session) {
   }
   getIt.registerLazySingleton<SaleOrderRepository>(
     () => SaleOrderRepository(
-        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+        getIt<OdooEnvironment>(),
+        getIt<NetworkConnectivity>(),
+        getIt<CustomOdooKv>(),
+        tenantCache: getIt<TenantAwareCache>()),
   );
 
   if (getIt.isRegistered<ProductRepository>()) {
@@ -857,7 +918,10 @@ void initAuthScope(OdooSession session) {
   }
   getIt.registerLazySingleton<ProductRepository>(
     () => ProductRepository(
-        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+        getIt<OdooEnvironment>(),
+        getIt<NetworkConnectivity>(),
+        getIt<CustomOdooKv>(),
+        tenantCache: getIt<TenantAwareCache>()),
   );
 
   if (getIt.isRegistered<PricelistRepository>()) {

@@ -17,8 +17,12 @@ class ProductRepository extends OfflineOdooRepository<Product> {
   int _limit = 80;
   int _offset = 0;
 
-  ProductRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache) {
+  ProductRepository(
+    OdooEnvironment env,
+    NetworkConnectivity netConn,
+    OdooKv cache, {
+    super.tenantCache,
+  }) : super(env, netConn, cache) {
     // Inicializar _callQueue desde dependency injection
     _callQueue = getIt<OdooCallQueueRepository>();
   }

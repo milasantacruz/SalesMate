@@ -216,6 +216,7 @@ class EmployeePinLoginRequested extends AuthEvent {
             password: info.password!,
             serverUrl: info.serverUrl,
             database: info.database,
+            licenseNumber: info.licenseNumber,
           );
           
           if (!loginSuccess) {
@@ -417,4 +418,6 @@ class EmployeePinLoginRequested extends AuthEvent {
       emit(AuthError('Error al validar PIN: $e'));
     }
   }
+
+
 

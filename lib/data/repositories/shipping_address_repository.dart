@@ -20,8 +20,9 @@ class ShippingAddressRepository extends OfflineOdooRepository<Partner> {
   ShippingAddressRepository(
     OdooEnvironment env,
     NetworkConnectivity networkConnectivity,
-    OdooKv kv,
-  ) : super(env, networkConnectivity, kv);
+    OdooKv kv, {
+    super.tenantCache,
+  }) : super(env, networkConnectivity, kv);
 
   @override
   Partner fromJson(Map<String, dynamic> json) => Partner.fromJson(json);

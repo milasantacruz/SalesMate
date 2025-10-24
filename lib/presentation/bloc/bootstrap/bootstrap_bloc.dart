@@ -6,6 +6,7 @@ import '../../../core/bootstrap/bootstrap_state.dart' as core;
 import '../../../core/sync/sync_marker_store.dart';
 import '../../../core/sync/incremental_sync_coordinator.dart';
 import '../../../core/sync/sync_state_converter.dart';
+import '../../../core/session/session_ready.dart';
 import 'bootstrap_event.dart';
 import 'bootstrap_state.dart';
 import '../../../core/di/injection_container.dart';
@@ -62,6 +63,11 @@ class BootstrapBloc extends Bloc<BootstrapEvent, UiBootstrapState> {
   Future<void> _runIncrementalSync(Emitter<UiBootstrapState> emit) async {
     try {
       final incrementalSync = getIt<IncrementalSyncCoordinator>();
+      
+      // ✅ v2.0: Esperar a que complete la re-autenticación antes de iniciar sync
+      print('⏳ BOOTSTRAP_BLOC: Esperando re-autenticación antes de incremental sync...');
+      await SessionReadyCoordinator.waitIfReauthenticationInProgress();
+      print('✅ BOOTSTRAP_BLOC: Re-autenticación completada, iniciando incremental sync');
       
       // Configurar callback de progreso
       incrementalSync.onProgress = (incrementalState) {

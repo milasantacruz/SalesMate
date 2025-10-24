@@ -38,9 +38,9 @@ class CookieClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    print('🚀 ANDROID: Iniciando request a ${request.url}');
-    print('📋 ANDROID: Método: ${request.method}');
-    print('📋 ANDROID: Headers: ${request.headers}');
+    // print('🚀 ANDROID: Iniciando request a ${request.url}');
+    // print('📋 ANDROID: Método: ${request.method}');
+    // print('📋 ANDROID: Headers: ${request.headers}');
     
     // 🔍 DEBUG FASE 1: Detectar peticiones a LicenseService
     if (request.url.toString().contains('app.proandsys.net')) {
@@ -81,8 +81,8 @@ class CookieClient extends http.BaseClient {
     try {
       print('⏳ ANDROID: Enviando request...');
       final response = await _inner.send(request);
-      print('✅ ANDROID: Response recibida - Status: ${response.statusCode}');
-      print('📋 ANDROID: Response headers: ${response.headers}');
+      // print('✅ ANDROID: Response recibida - Status: ${response.statusCode}');
+      // print('📋 ANDROID: Response headers: ${response.headers}');
       
       // 🔍 DEBUG FASE 1: Logs específicos para LicenseService
       if (request.url.toString().contains('app.proandsys.net')) {

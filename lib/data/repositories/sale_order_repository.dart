@@ -7,6 +7,7 @@ import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
 import '../../core/di/injection_container.dart';
 import '../../core/audit/audit_helper.dart';
+import '../../core/tenant/tenant_storage_config.dart';
 import 'odoo_call_queue_repository.dart';
 
 /// Repository para manejar operaciones con Sale Orders en Odoo con soporte offline
@@ -21,8 +22,12 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   // Cache para totales calculados
   final Map<String, OrderTotals> _totalsCache = {};
 
-  SaleOrderRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache) {
+  SaleOrderRepository(
+    OdooEnvironment env,
+    NetworkConnectivity netConn,
+    OdooKv cache, {
+    super.tenantCache,
+  }) : super(env, netConn, cache) {
     // Inicializar _callQueue desde dependency injection
     _callQueue = getIt<OdooCallQueueRepository>();
   }
@@ -962,9 +967,12 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     }
   }
 
-  @override
   Future<List<Map<String, dynamic>>> fetchIncrementalRecords(String since) async {
     print('🔄 SALE_ORDER_REPO: Fetch incremental desde $since');
+    
+    // ✅ v2.0: Aplicar filtrado temporal (6 meses) para reducir tamaño de cache
+    final temporalDomain = TenantStorageConfig.getSaleOrdersDateDomain();
+    print('📅 SALE_ORDER_REPO: Filtro temporal aplicado: últimos ${TenantStorageConfig.saleOrdersMonthsBack} meses');
     
     final response = await env.orpc.callKw({
       'model': modelName,
@@ -975,6 +983,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         'domain': [
           ['state', '!=', 'cancel'],
           ['write_date', '>', since], // 👈 Filtro de fecha incremental
+          ...temporalDomain, // ✅ v2.0: Filtrar por fecha (últimos 6 meses)
         ],
         'fields': oFields,
         'limit': 1000, // Alto límite (usualmente pocos cambios)

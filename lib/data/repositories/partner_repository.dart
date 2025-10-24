@@ -14,8 +14,12 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
     ['type', '=', 'contact'],
   ];
 
-  PartnerRepository(OdooEnvironment env, NetworkConnectivity netConn, OdooKv cache)
-      : super(env, netConn, cache) {
+  PartnerRepository(
+    OdooEnvironment env,
+    NetworkConnectivity netConn,
+    OdooKv cache, {
+    super.tenantCache,
+  }) : super(env, netConn, cache) {
     // Inicializar _callQueue desde dependency injection
     _callQueue = getIt<OdooCallQueueRepository>();
   }

@@ -4,6 +4,7 @@ import 'package:odoo_rpc/odoo_rpc.dart';
 import '../../core/network/network_connectivity.dart';
 import '../../core/errors/session_expired_handler.dart';
 import '../../core/session/session_ready.dart';
+import '../../core/tenant/tenant_aware_cache.dart';
 
 /// Clase base abstracta para repositorios que soportan modo offline.
 ///
@@ -14,11 +15,16 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
   late final OdooEnvironment env;
   late final NetworkConnectivity netConn;
   late final OdooKv cache;
+  final TenantAwareCache? tenantCache;
   List<T> latestRecords = [];
   
-  OfflineOdooRepository(OdooEnvironment environment, this.netConn, this.cache)
-      : env = environment,
-        super(environment);
+  OfflineOdooRepository(
+    OdooEnvironment environment,
+    this.netConn,
+    this.cache, {
+    this.tenantCache,
+  }) : env = environment,
+       super(environment);
 
   /// Forces subclasses to provide a way to convert from JSON to the record type [T].
   /// This method is called by [fetchRecords] after getting data from the server.
@@ -42,18 +48,29 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
 
       if (await netConn.checkNetConn() == netConnState.online) {
         // ONLINE: Obtener datos frescos del servidor
-        final recordsJson = await searchRead();
+        final recordsJsonList = await searchRead();
         final records =
-            recordsJson.map((item) => fromJson(item as Map<String, dynamic>)).toList();
+            recordsJsonList.map((item) => fromJson(item as Map<String, dynamic>)).toList();
 
         // Guardar en caché para uso offline
-        await cache.put('${T.toString()}_records', records.map((r) => r.toJson()).toList());
+        final cacheKey = '${T.toString()}_records';
+        final recordsJson = records.map((r) => r.toJson()).toList();
+        
+        if (tenantCache != null) {
+          await tenantCache!.put(cacheKey, recordsJson);
+        } else {
+          await cache.put(cacheKey, recordsJson);
+        }
         
         // Actualizar la lista local
         latestRecords = records;
       } else {
         // OFFLINE: Cargar datos desde la caché local
-        final cachedData = cache.get('${T.toString()}_records', defaultValue: <Map<String, dynamic>>[]);
+        final cacheKey = '${T.toString()}_records';
+        final cachedData = tenantCache != null
+            ? tenantCache!.get<List>(cacheKey)
+            : cache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
+            
         if (cachedData is List) {
           final cachedRecords = cachedData.map((json) => fromJson(json as Map<String, dynamic>)).toList();
           latestRecords = cachedRecords;
@@ -74,7 +91,11 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
     } catch (_) {
       // Para otros errores (ej. de red), intentamos cargar desde caché como fallback
       try {
-        final cachedData = cache.get('${T.toString()}_records', defaultValue: <Map<String, dynamic>>[]);
+        final cacheKey = '${T.toString()}_records';
+        final cachedData = tenantCache != null
+            ? tenantCache!.get<List>(cacheKey)
+            : cache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
+            
         if (cachedData is List) {
           final cachedRecords = cachedData.map((json) => fromJson(json as Map<String, dynamic>)).toList();
           latestRecords = cachedRecords;
@@ -88,5 +109,7 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
     }
   }
 }
+
+
 
 
