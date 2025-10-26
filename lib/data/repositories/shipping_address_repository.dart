@@ -192,7 +192,11 @@ class ShippingAddressRepository extends OfflineOdooRepository<Partner> {
   /// Obtiene direcciones de despacho desde caché offline
   List<Partner> getCachedShippingAddresses() {
     try {
-      final cachedData = cache.get('ShippingAddress_records', defaultValue: <Map<String, dynamic>>[]);
+      // ✅ v2.0: Usar tenantCache si está disponible
+      final cachedData = tenantCache != null
+          ? tenantCache!.get('ShippingAddress_records', defaultValue: <Map<String, dynamic>>[])
+          : cache.get('ShippingAddress_records', defaultValue: <Map<String, dynamic>>[]);
+      
       if (cachedData is List) {
         final cachedAddresses = cachedData.map((json) => fromJson(json as Map<String, dynamic>)).toList();
         print('📍 SHIPPING_ADDRESS_REPO: ${cachedAddresses.length} direcciones cargadas desde caché');

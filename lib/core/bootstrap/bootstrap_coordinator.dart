@@ -493,7 +493,12 @@ class BootstrapCoordinator {
       
       // ✅ v2.0: Aplicar filtrado temporal (6 meses) para reducir tamaño de cache
       final temporalDomain = TenantStorageConfig.getSaleOrdersDateDomain();
-      print('📅 BOOTSTRAP_COORDINATOR: Filtro temporal aplicado: últimos ${TenantStorageConfig.saleOrdersMonthsBack} meses');
+      final filterDate = TenantStorageConfig.getSaleOrdersFilterDate();
+      if (filterDate != null) {
+        print('📅 BOOTSTRAP_COORDINATOR: Filtro temporal aplicado: últimos ${TenantStorageConfig.saleOrdersMonthsBack} meses (desde ${filterDate.toLocal()})');
+      } else {
+        print('📅 BOOTSTRAP_COORDINATOR: Sin filtro temporal (todas las fechas)');
+      }
       
       // Loop de paginación
       while (true) {

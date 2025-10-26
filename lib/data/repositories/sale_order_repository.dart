@@ -972,7 +972,12 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     
     // ✅ v2.0: Aplicar filtrado temporal (6 meses) para reducir tamaño de cache
     final temporalDomain = TenantStorageConfig.getSaleOrdersDateDomain();
-    print('📅 SALE_ORDER_REPO: Filtro temporal aplicado: últimos ${TenantStorageConfig.saleOrdersMonthsBack} meses');
+    final filterDate = TenantStorageConfig.getSaleOrdersFilterDate();
+    if (filterDate != null) {
+      print('📅 SALE_ORDER_REPO: Filtro temporal aplicado: últimos ${TenantStorageConfig.saleOrdersMonthsBack} meses (desde ${filterDate.toLocal()})');
+    } else {
+      print('📅 SALE_ORDER_REPO: Sin filtro temporal (todas las fechas)');
+    }
     
     final response = await env.orpc.callKw({
       'model': modelName,

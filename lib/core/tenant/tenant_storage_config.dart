@@ -112,6 +112,23 @@ class TenantStorageConfig {
     return [['date_order', '>=', formattedDate]];
   }
   
+  /// Obtiene la fecha de filtro para Sale Orders (útil para logs)
+  /// 
+  /// Retorna la fecha desde la cual se filtran los Sale Orders (últimos 6 meses).
+  /// Retorna null si el filtrado temporal está deshabilitado.
+  static DateTime? getSaleOrdersFilterDate() {
+    if (!enableTemporalFiltering) {
+      return null;  // Sin filtro
+    }
+    
+    final now = DateTime.now();
+    return DateTime(
+      now.year,
+      now.month - saleOrdersMonthsBack,
+      now.day,
+    );
+  }
+  
   /// Indica si se debe aplicar filtro temporal para un modelo
   /// 
   /// Por ahora solo Sale Orders usan filtro temporal.

@@ -51,6 +51,12 @@ class IncrementalSyncCoordinator {
   /// Si no hay marcadores, omite la sincronización (usar bootstrap completo).
   Future<IncrementalSyncState> run() async {
     print('🔄 INCREMENTAL_SYNC: ===== INICIANDO SINCRONIZACIÓN INCREMENTAL =====');
+    
+    // Obtener el marcador más antiguo para mostrar la fecha de inicio
+    final oldestMarker = _markerStore.getOldestMarker();
+    if (oldestMarker != null) {
+      print('🔄 INCREMENTAL_SYNC: Sincronizando cambios desde ${oldestMarker.toLocal()}');
+    }
 
     _currentState = IncrementalSyncState.initial();
     _report();
@@ -102,6 +108,7 @@ class IncrementalSyncCoordinator {
 
       final timeSinceLastSync = DateTime.now().difference(lastSync);
       print('🔄 INCREMENTAL_SYNC [${module.displayName}]: Último sync: $lastSync (hace ${timeSinceLastSync.inMinutes} minutos)');
+      print('🔄 INCREMENTAL_SYNC [${module.displayName}]: Sincronizando cambios desde ${lastSync.toLocal()}');
 
       // 2. Fetch incremental desde el servidor
       final incrementalRecords = await _fetchIncrementalRecords(module, lastSync);

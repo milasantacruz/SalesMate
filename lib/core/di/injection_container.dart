@@ -463,7 +463,19 @@ Future<void> _setupRepositories() async {
       getIt<CustomOdooKv>(),
     ));
     
-    print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist)');
+    // Desregistrar CityRepository anterior si existe
+    if (getIt.isRegistered<CityRepository>()) {
+      getIt.unregister<CityRepository>();
+    }
+    
+    // Registrar CityRepository
+    getIt.registerLazySingleton<CityRepository>(() => CityRepository(
+      env,
+      getIt<NetworkConnectivity>(),
+      getIt<CustomOdooKv>(),
+    ));
+    
+    print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist + City)');
     
     // Registrar servicios offline
     if (getIt.isRegistered<SyncCoordinatorRepository>()) {
