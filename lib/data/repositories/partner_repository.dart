@@ -181,8 +181,13 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
   /// Crea una nueva dirección de despacho
   Future<Partner?> createDeliveryAddress(Map<String, dynamic> addressData) async {
     try {
-      print('📋 PARTNER_REPO: Creando nueva dirección de despacho...');
+      print('📋 PARTNER_REPO: createDeliveryAddress() iniciado');
       print('📋 PARTNER_REPO: Datos: $addressData');
+      
+      // Verificar conectividad primero
+      final connectivity = await netConn.checkNetConn();
+      print('📡 PARTNER_REPO: Estado de red: $connectivity');
+      print('🌐 PARTNER_REPO: Es online: ${connectivity == netConnState.online}');
       
       // Asegurar que el type es delivery
       final finalData = {
@@ -190,6 +195,48 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
         'type': 'delivery',
         'active': true,
       };
+      
+      print('📋 PARTNER_REPO: Datos finales para crear: $finalData');
+      
+      // Verificar si estamos offline antes de intentar llamar
+      if (connectivity != netConnState.online) {
+        print('📴 PARTNER_REPO: Modo OFFLINE detectado - creando objeto temporal');
+        print('⚠️ PARTNER_REPO: NO se llamará a env.orpc.callKw()');
+        
+        // Generar ID temporal negativo
+        final tempId = DateTime.now().millisecondsSinceEpoch;
+        final newAddressId = -tempId;
+        
+        print('📴 PARTNER_REPO: ID temporal asignado: $newAddressId');
+        
+        // Crear objeto Partner temporal
+        final tempAddress = Partner(
+          id: newAddressId,
+          name: finalData['name'] as String,
+          email: finalData['email'] as String?,
+          phone: finalData['phone'] as String?,
+          isCompany: false,
+          customerRank: 0,
+          supplierRank: 0,
+          active: true,
+          type: 'delivery',
+          parentId: finalData['parent_id'] as int,
+          commercialPartnerId: finalData['parent_id'] as int,
+          street: finalData['street'] as String?,
+          street2: finalData['street2'] as String?,
+          city: finalData['city'] as String?,
+          cityId: finalData['city_id'] as int?,
+          stateId: finalData['state_id'] as int?,
+          countryId: finalData['country_id'] as int?,
+          zip: finalData['zip'] as String?,
+        );
+        
+        print('📴 PARTNER_REPO: Objeto temporal creado exitosamente');
+        print('📴 PARTNER_REPO: Retornando dirección temporal para uso offline');
+        return tempAddress;
+      }
+      
+      print('🌐 PARTNER_REPO: Modo ONLINE - llamando a env.orpc.callKw()...');
       
       final response = await env.orpc.callKw({
         'model': modelName,
@@ -218,8 +265,18 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
       }
       
       return null;
-    } catch (e) {
-      print('❌ PARTNER_REPO: Error creando dirección: $e');
+    } catch (e, stackTrace) {
+      print('❌ PARTNER_REPO: Error en createDeliveryAddress()');
+      print('❌ PARTNER_REPO: Tipo de error: ${e.runtimeType}');
+      print('❌ PARTNER_REPO: Mensaje: $e');
+      print('❌ PARTNER_REPO: Stack trace: $stackTrace');
+      
+      // Verificar si es error de red
+      if (e.toString().contains('SocketException') || e.toString().contains('Failed host lookup')) {
+        print('📴 PARTNER_REPO: Detectado error de red/offline');
+        print('⚠️ PARTNER_REPO: DEBERÍA usar cola offline aquí');
+      }
+      
       rethrow;
     }
   }

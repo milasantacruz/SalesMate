@@ -93,18 +93,22 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
 
   Future<void> _loadInitialCities() async {
     try {
-      print('🏙️ Cargando ciudades iniciales...');
+      print('🏙️ DIALOG: Cargando ciudades iniciales...');
       final cityRepo = getIt<CityRepository>();
+      print('🏙️ DIALOG: Obteniendo CityRepository');
+      
       final cities = await cityRepo.getChileanCities();
-      print('🏙️ Ciudades cargadas: ${cities.length}');
+      print('🏙️ DIALOG: getChileanCities() retornó ${cities.length} ciudades');
+      
       if (mounted) {
         setState(() {
           _citySearchResults = cities.take(50).toList();
-          print('🏙️ _citySearchResults actualizado: ${_citySearchResults.length}');
+          print('🏙️ DIALOG: _citySearchResults actualizado: ${_citySearchResults.length}');
         });
       }
-    } catch (e) {
-      print('❌ Error cargando ciudades: $e');
+    } catch (e, stackTrace) {
+      print('❌ DIALOG: Error cargando ciudades: $e');
+      print('❌ DIALOG: Stack trace: $stackTrace');
     }
   }
 
@@ -156,7 +160,9 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
     });
 
     try {
+      print('📍 DIALOG: _createAddress() iniciado');
       final partnerRepo = getIt<PartnerRepository>();
+      print('📍 DIALOG: PartnerRepository obtenido');
       
       final addressData = {
         'name': _nameController.text.trim(),
@@ -178,9 +184,12 @@ class _CreateShippingAddressDialogState extends State<CreateShippingAddressDialo
             : null,
       };
 
-      print('📍 Creando dirección: $addressData');
+      print('📍 DIALOG: Dirección a crear: $addressData');
+      print('📍 DIALOG: Llamando a createDeliveryAddress()...');
       
       final newAddress = await partnerRepo.createDeliveryAddress(addressData);
+      
+      print('📍 DIALOG: createDeliveryAddress() retornó: ${newAddress != null}');
       
       if (newAddress != null && mounted) {
         Navigator.of(context).pop(newAddress);

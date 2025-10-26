@@ -125,9 +125,18 @@ class SyncMarkerStore {
         : _cache.get(_markerKey, defaultValue: <String, String>{});
     
     if (data is Map) {
-      return Map<String, String>.from(data);
+      // Convertir de forma segura Map<dynamic, dynamic> a Map<String, String>
+      final result = <String, String>{};
+      data.forEach((key, value) {
+        if (key is String && value is String) {
+          result[key] = value;
+        } else if (key != null && value != null) {
+          result[key.toString()] = value.toString();
+        }
+      });
+      return result;
     }
-    return {};
+    return <String, String>{};
   }
 
   /// Verifica si existe un marcador para un modelo

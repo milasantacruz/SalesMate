@@ -65,15 +65,23 @@ class CityRepository extends OfflineOdooRepository<City> {
       return latestRecords;
     }
     
+    print('🔍 CITY_REPO: searchCitiesByName() - query: "$query"');
+    print('📊 CITY_REPO: latestRecords.length: ${latestRecords.length}');
+    print('💾 CITY_REPO: latestRecords.isNotEmpty: ${latestRecords.isNotEmpty}');
+    
     // Si ya tenemos ciudades en cache, buscar localmente
     if (latestRecords.isNotEmpty) {
+      print('✅ CITY_REPO: Buscando localmente en cache');
       final queryLower = query.toLowerCase();
-      return latestRecords
+      final results = latestRecords
           .where((city) => city.name.toLowerCase().contains(queryLower))
           .toList();
+      print('✅ CITY_REPO: ${results.length} resultados encontrados localmente');
+      return results;
     }
     
     // Si no hay cache, buscar en servidor con filtro
+    print('⚠️ CITY_REPO: Cache vacío - intentando búsqueda remota (esto fallará en offline)');
     try {
       print('🏙️ CITY_REPO: Buscando ciudades por nombre: $query');
       

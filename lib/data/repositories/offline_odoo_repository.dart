@@ -66,16 +66,28 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
         latestRecords = records;
       } else {
         // OFFLINE: Cargar datos desde la caché local
+        print('📴 OFFLINE_REPO: Modo offline detectado - cargando desde cache');
         final cacheKey = '${T.toString()}_records';
+        print('🔑 OFFLINE_REPO: Buscando key: "$cacheKey"');
+        print('🔍 OFFLINE_REPO: Usando tenantCache: ${tenantCache != null}');
+        
         final cachedData = tenantCache != null
             ? tenantCache!.get<List>(cacheKey)
             : cache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
             
+        print('💾 OFFLINE_REPO: Datos encontrados en cache: ${cachedData != null}');
+        if (cachedData != null) {
+          print('📊 OFFLINE_REPO: Tipo de datos: ${cachedData.runtimeType}');
+          print('📊 OFFLINE_REPO: Es List: ${cachedData is List}');
+        }
+            
         if (cachedData is List) {
           final cachedRecords = cachedData.map((json) => fromJson(json as Map<String, dynamic>)).toList();
           latestRecords = cachedRecords;
+          print('✅ OFFLINE_REPO: ${cachedRecords.length} registros cargados desde cache');
         } else {
           latestRecords = <T>[];
+          print('❌ OFFLINE_REPO: Cache vacío o tipo incorrecto - latestRecords = 0');
         }
       }
     } on OdooException catch (e) {

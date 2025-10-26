@@ -14,6 +14,7 @@ import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/shipping_address_repository.dart';
+import '../../data/repositories/city_repository.dart';
 import 'bootstrap_state.dart';
 import '../sync/sync_marker_store.dart';
 
@@ -26,6 +27,7 @@ class BootstrapCoordinator {
   final EmployeeRepository _employeeRepo;
   final SaleOrderRepository _saleOrderRepo;
   final ShippingAddressRepository _shippingAddressRepo;
+  final CityRepository _cityRepo;
 
   BootstrapCoordinator()
       : _netConn = getIt<NetworkConnectivity>(),
@@ -34,7 +36,8 @@ class BootstrapCoordinator {
         _productRepo = getIt<ProductRepository>(),
         _employeeRepo = getIt<EmployeeRepository>(),
         _saleOrderRepo = getIt<SaleOrderRepository>(),
-        _shippingAddressRepo = getIt<ShippingAddressRepository>();
+        _shippingAddressRepo = getIt<ShippingAddressRepository>(),
+        _cityRepo = getIt<CityRepository>();
 
   /// Callback de progreso
   void Function(BootstrapState)? onProgress;
@@ -109,6 +112,10 @@ class BootstrapCoordinator {
           print('✅ COORDINATOR: Shipping Addresses completado en paralelo');
           report();
         }),
+        _bootstrapCities().then((_) { 
+          print('✅ COORDINATOR: Cities completado en paralelo');
+          report();
+        }),
       ]).timeout(const Duration(seconds: 30), onTimeout: () async {
         print('⏰ BOOTSTRAP_COORDINATOR: Timeout de 30s alcanzado');
         return [];
@@ -148,6 +155,7 @@ class BootstrapCoordinator {
         'hr.employee': now,
         'res.partner.delivery': now,
         'sale.order': now,
+        'res.city': now,
       });
       
       print('✅ BOOTSTRAP_COORDINATOR: Marcadores de sincronización registrados');
@@ -680,6 +688,62 @@ class BootstrapCoordinator {
     } catch (e) {
       print('❌ BOOTSTRAP_COORDINATOR: Error en bootstrap de shipping addresses: $e');
       _currentState = _failModule(_currentState, BootstrapModule.shippingAddresses, e.toString());
+    }
+  }
+
+  /// Bootstrap de ciudades (res.city)
+  /// 
+  /// Carga todas las ciudades de Chile desde Odoo y las guarda en caché.
+  /// Este módulo es necesario para el correcto funcionamiento del input de ciudades
+  /// en el diálogo de creación de direcciones de despacho.
+  Future<void> _bootstrapCities() async {
+    print('🏙️ BOOTSTRAP_COORDINATOR: Iniciando bootstrap de cities...');
+    
+    try {
+      // Hacer llamada directa al repositorio
+      final response = await _cityRepo.env.orpc.callKw({
+        'model': 'res.city',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'context': {'bin_size': true},
+          'domain': [
+            ['country_id.name', '=', 'Chile']
+          ],
+          'fields': _cityRepo.oFields,
+          'limit': 500, // Chile tiene ~346 comunas
+          'offset': 0,
+          'order': 'name'
+        },
+      });
+      
+      final records = response as List<dynamic>;
+      final allCitiesJson = records.map((record) => record as Map<String, dynamic>).toList();
+      
+      print('🏙️ BOOTSTRAP_COORDINATOR: ${allCitiesJson.length} ciudades obtenidas');
+      
+      if (allCitiesJson.isEmpty) {
+        print('⚠️ BOOTSTRAP_COORDINATOR: No se obtuvieron ciudades');
+        return;
+      }
+      
+      // Convertir JSON a objetos City
+      final allCities = allCitiesJson.map((json) => _cityRepo.fromJson(json)).toList();
+      _cityRepo.latestRecords = allCities;
+      
+      // Guardar en caché usando tenantCache
+      if (_cityRepo.tenantCache != null) {
+        await _cityRepo.tenantCache!.put('City_records', allCitiesJson);
+      } else {
+        await _cache.put('City_records', allCitiesJson);
+      }
+      
+      print('🏙️ BOOTSTRAP_COORDINATOR: ${allCities.length} ciudades guardadas en caché');
+      
+      _currentState = _updateModule(_currentState, BootstrapModule.cities, 1, allCities.length, completed: true);
+    } catch (e) {
+      print('❌ BOOTSTRAP_COORDINATOR: Error en bootstrap de cities: $e');
+      _currentState = _failModule(_currentState, BootstrapModule.cities, e.toString());
     }
   }
 }
