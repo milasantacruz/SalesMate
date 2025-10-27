@@ -11,6 +11,7 @@ import '../lib/data/repositories/sync_coordinator_repository.dart';
 import '../lib/data/repositories/odoo_call_queue_repository.dart';
 import '../lib/core/network/network_connectivity.dart';
 import '../lib/core/cache/custom_odoo_kv.dart';
+import '../lib/core/tenant/tenant_aware_cache.dart';
 
 void main() {
   group('Offline Functionality Tests', () {
@@ -35,6 +36,12 @@ void main() {
       getIt.registerLazySingleton<CustomOdooKv>(() => CustomOdooKv());
       getIt.registerLazySingleton<LocalIdRepository>(() => LocalIdRepository());
       
+      // Inicializar TenantAwareCache
+      final kv = getIt<CustomOdooKv>();
+      await kv.init();
+      final tenantCache = TenantAwareCache(kv);
+      getIt.registerSingleton<TenantAwareCache>(tenantCache);
+      
       // Inicializar y registrar OperationQueueRepository
       queueRepo = OperationQueueRepository();
       await queueRepo.init();
@@ -48,6 +55,7 @@ void main() {
         networkConnectivity: getIt<NetworkConnectivity>(),
         queueRepository: getIt<OperationQueueRepository>(),
         odooClient: getIt<OdooClient>(),
+        tenantCache: getIt<TenantAwareCache>(),
       ));
 
       getIt.registerLazySingleton<OdooCallQueueRepository>(() => OdooCallQueueRepository(

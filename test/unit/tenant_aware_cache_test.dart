@@ -5,7 +5,6 @@ import 'package:odoo_sales_app/core/cache/custom_odoo_kv.dart';
 import 'package:odoo_sales_app/core/tenant/tenant_context.dart';
 import 'package:odoo_sales_app/core/tenant/tenant_aware_cache.dart';
 import 'package:odoo_sales_app/core/tenant/tenant_exception.dart';
-import 'package:path/path.dart' as path;
 
 void main() {
   late CustomOdooKv kv;

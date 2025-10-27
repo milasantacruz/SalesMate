@@ -584,6 +584,23 @@ Future<bool> checkExistingSession() async {
         );
         getIt.registerSingleton<OdooClient>(odooClient);
 
+        // ✅ FIX: Restaurar TenantContext desde cache
+        final cachedLicenseNumber = cache.get('licenseNumber') as String?;
+        final cachedDatabase = cache.get('database') as String?;
+        
+        if (cachedLicenseNumber != null && cachedLicenseNumber.isNotEmpty && cachedDatabase != null) {
+          print('🏢 TENANT: Restaurando tenant de sesión guardada');
+          print('   License: $cachedLicenseNumber');
+          print('   Database: $cachedDatabase');
+          
+          TenantContext.setTenant(cachedLicenseNumber, cachedDatabase);
+          print('✅ TENANT: TenantContext restaurado correctamente');
+        } else {
+          print('⚠️ TENANT: No se encontró licenseNumber en cache');
+          print('   cachedLicenseNumber: $cachedLicenseNumber');
+          print('   cachedDatabase: $cachedDatabase');
+        }
+
         // Recrear environment y repositories que dependen del cliente autenticado
         await _recreateOdooEnvironment();
         await _setupRepositories();

@@ -120,23 +120,27 @@ class SyncMarkerStore {
   /// Obtiene todos los marcadores (interno)
   Map<String, String> _getAllMarkers() {
     // ✅ v2.0: Usar tenantCache si está disponible
-    final data = _tenantCache != null
-        ? _tenantCache!.get(_markerKey, defaultValue: <String, String>{})
-        : _cache.get(_markerKey, defaultValue: <String, String>{});
+    dynamic rawData;
+    if (_tenantCache != null) {
+      rawData = _tenantCache!.get(_markerKey, defaultValue: <dynamic, dynamic>{});
+    } else {
+      rawData = _cache.get(_markerKey, defaultValue: <String, String>{});
+    }
     
-    if (data is Map) {
-      // Convertir de forma segura Map<dynamic, dynamic> a Map<String, String>
-      final result = <String, String>{};
-      data.forEach((key, value) {
+    // Convertir de forma segura Map<dynamic, dynamic> a Map<String, String>
+    final result = <String, String>{};
+    
+    if (rawData is Map) {
+      rawData.forEach((key, value) {
         if (key is String && value is String) {
           result[key] = value;
         } else if (key != null && value != null) {
           result[key.toString()] = value.toString();
         }
       });
-      return result;
     }
-    return <String, String>{};
+    
+    return result;
   }
 
   /// Verifica si existe un marcador para un modelo

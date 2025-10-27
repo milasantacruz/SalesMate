@@ -42,6 +42,16 @@ class TenantAwareCache {
     
     if (value != null) {
       print('💾 TENANT_CACHE: GET "$key" → "$scopedKey" (${value.runtimeType})');
+      
+      // Log detallado para listas
+      if (value is List) {
+        print('📊 TENANT_CACHE: Lista tiene ${value.length} elementos');
+        if (value.isEmpty) {
+          print('⚠️ TENANT_CACHE: Lista VACÍA (${value.runtimeType})');
+        }
+      }
+    } else {
+      print('💾 TENANT_CACHE: GET "$key" → "$scopedKey" (null o defaultValue)');
     }
     
     return value as T?;

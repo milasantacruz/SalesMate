@@ -33,25 +33,35 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
   @override
   Future<List<dynamic>> searchRead() async {
     print('📋 PARTNER_REPO: Buscando partners con domain: $oDomain');
+    print('🔍 PARTNER_REPO: Iniciando callKw...');
     
-    final response = await env.orpc.callKw({
-      'model': modelName,
-      'method': 'search_read',
-      'args': [],
-      'kwargs': {
-        'context': {'bin_size': true},
-        'domain': oDomain,
-        'fields': oFields,
-        'limit': 80,
-        'offset': 0,
-        'order': 'name'
-      },
-    });
-    
-    final records = response as List<dynamic>;
-    print('📋 PARTNER_REPO: ${records.length} contactos activos encontrados');
-    
-    return records;
+    try {
+      final response = await env.orpc.callKw({
+        'model': modelName,
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'context': {'bin_size': true},
+          'domain': oDomain,
+          'fields': oFields,
+          'limit': 80,
+          'offset': 0,
+          'order': 'name'
+        },
+      });
+      
+      print('✅ PARTNER_REPO: callKw completado exitosamente');
+      final records = response as List<dynamic>;
+      print('📋 PARTNER_REPO: ${records.length} contactos activos encontrados');
+      
+      return records;
+    } catch (e, stackTrace) {
+      print('❌ PARTNER_REPO: Error en searchRead()');
+      print('❌ PARTNER_REPO: Tipo de error: ${e.runtimeType}');
+      print('❌ PARTNER_REPO: Mensaje: $e');
+      print('❌ PARTNER_REPO: Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 
   @override
