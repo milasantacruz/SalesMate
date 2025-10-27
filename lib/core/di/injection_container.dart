@@ -479,12 +479,13 @@ Future<void> _setupRepositories() async {
     
     // Registrar servicios offline
     if (getIt.isRegistered<SyncCoordinatorRepository>()) {
-      getIt.unregister<SyncCoordinatorRepository>();
+getIt.unregister<SyncCoordinatorRepository>();
     }
     getIt.registerLazySingleton<SyncCoordinatorRepository>(() => SyncCoordinatorRepository(
       networkConnectivity: getIt<NetworkConnectivity>(),
       queueRepository: getIt<OperationQueueRepository>(),
       odooClient: getIt<OdooClient>(),
+      tenantCache: getIt<TenantAwareCache>(),
     ));
     
     if (getIt.isRegistered<OdooCallQueueRepository>()) {
@@ -514,20 +515,21 @@ Future<void> _setupRepositories() async {
     }
     
     // Registrar IncrementalSyncCoordinator
-    if (!getIt.isRegistered<IncrementalSyncCoordinator>()) {
-      getIt.registerLazySingleton<IncrementalSyncCoordinator>(
-        () => IncrementalSyncCoordinator(
-          partnerRepo: getIt<PartnerRepository>(),
-          productRepo: getIt<ProductRepository>(),
-          employeeRepo: getIt<EmployeeRepository>(),
-          saleOrderRepo: getIt<SaleOrderRepository>(),
-          shippingAddressRepo: getIt<ShippingAddressRepository>(),
-          markerStore: getIt<SyncMarkerStore>(),
-          cache: getIt<OdooKv>(),
-        ),
-      );
-      print('✅ IncrementalSyncCoordinator registrado');
+    if (getIt.isRegistered<IncrementalSyncCoordinator>()) {
+      getIt.unregister<IncrementalSyncCoordinator>();
     }
+    getIt.registerLazySingleton<IncrementalSyncCoordinator>(
+      () => IncrementalSyncCoordinator(
+        partnerRepo: getIt<PartnerRepository>(),
+        productRepo: getIt<ProductRepository>(),
+        employeeRepo: getIt<EmployeeRepository>(),
+        saleOrderRepo: getIt<SaleOrderRepository>(),
+        shippingAddressRepo: getIt<ShippingAddressRepository>(),
+        markerStore: getIt<SyncMarkerStore>(),
+        tenantCache: getIt<TenantAwareCache>(),
+      ),
+    );
+    print('✅ IncrementalSyncCoordinator registrado');
     
     // Aquí se agregarán más repositories cuando se implementen
     // env.add(UserRepository(env));

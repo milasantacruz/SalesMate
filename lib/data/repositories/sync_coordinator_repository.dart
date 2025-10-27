@@ -1,6 +1,7 @@
 import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:odoo_repository/odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
+import '../../core/tenant/tenant_aware_cache.dart';
 import '../models/pending_operation_model.dart';
 import 'operation_queue_repository.dart';
 
@@ -9,6 +10,7 @@ class SyncCoordinatorRepository {
   final NetworkConnectivity _networkConnectivity;
   final OperationQueueRepository _queueRepository;
   final OdooClient _odooClient;
+  final TenantAwareCache _tenantCache;
   
   /// Callback para notificar cambios de estado
   Function(SyncProgress)? onProgressChanged;
@@ -20,9 +22,11 @@ class SyncCoordinatorRepository {
     required NetworkConnectivity networkConnectivity,
     required OperationQueueRepository queueRepository,
     required OdooClient odooClient,
+    required TenantAwareCache tenantCache,
   }) : _networkConnectivity = networkConnectivity,
        _queueRepository = queueRepository,
-       _odooClient = odooClient;
+       _odooClient = odooClient,
+       _tenantCache = tenantCache;
 
   /// Verifica si hay conexión a internet
   Future<bool> isOnline() async {
@@ -64,25 +68,36 @@ class SyncCoordinatorRepository {
         );
       }
 
+      // NUEVO: Ordenar operaciones por dependencias (direcciones antes de orders)
+      final sortedOperations = _sortByDependencies(activeOperations);
+      print('🔀 SYNC_COORDINATOR: Operaciones ordenadas: ${sortedOperations.length}');
+      for (final op in sortedOperations) {
+        print('   - ${op.operation} ${op.model}');
+      }
+
       int syncedCount = 0;
       int failedCount = 0;
       
-      for (int i = 0; i < activeOperations.length; i++) {
-        final operation = activeOperations[i];
+      for (int i = 0; i < sortedOperations.length; i++) {
+        final operation = sortedOperations[i];
         
         // Notificar progreso
         onProgressChanged?.call(SyncProgress(
           currentOperation: i + 1,
-          totalOperations: activeOperations.length,
+          totalOperations: sortedOperations.length,
           currentOperationType: operation.operation,
           currentModel: operation.model,
         ));
         
         try {
-          final success = await _syncSingleOperation(operation);
+          final success = await _syncSingleOperationWithDependencyResolution(operation);
           if (success) {
             syncedCount++;
             print('✅ SYNC_COORDINATOR: Operación sincronizada - ${operation.id}');
+            
+            // Eliminar operación de la cola después de sincronización exitosa
+            await _queueRepository.removeOperation(operation.id);
+            print('🗑️ SYNC_COORDINATOR: Operación eliminada de la cola');
           } else {
             failedCount++;
             print('❌ SYNC_COORDINATOR: Falló sincronización - ${operation.id}');
@@ -182,18 +197,85 @@ class SyncCoordinatorRepository {
     }
   }
 
+  /// Helper method to sort operations by dependencies
+  /// Rule: res.partner (delivery addresses) must be created before sale.order
+  List<PendingOperation> _sortByDependencies(List<PendingOperation> operations) {
+    // Separate operations by model
+    final addressOps = operations.where((op) => op.model == 'res.partner').toList();
+    final saleOrderOps = operations.where((op) => op.model == 'sale.order').toList();
+    final otherOps = operations.where((op) => 
+      op.model != 'res.partner' && op.model != 'sale.order').toList();
+    
+    // Return sorted: addresses first, then sale orders, then others
+    return [...addressOps, ...saleOrderOps, ...otherOps];
+  }
+
+  /// Maps temporary IDs to real IDs during sync
+  final Map<int, int> _tempIdToRealId = {};
+
+  /// Sync operation with dependency resolution
+  Future<bool> _syncSingleOperationWithDependencyResolution(PendingOperation operation) async {
+    // NUEVO: Resolver dependencias antes de sincronizar
+    if (operation.model == 'sale.order') {
+      print('🔍 SYNC_COORDINATOR: Resolviendo dependencias para sale.order...');
+      
+      // Verificar si hay un partner_shipping_id (dirección) que debe crearse primero
+      final shippingId = operation.data['partner_shipping_id'];
+      if (shippingId is int && shippingId < 0) {
+        print('🔍 SYNC_COORDINATOR: Detectado ID temporal: $shippingId');
+        
+        // Verificar si ya tenemos el ID real mapeado (desde la sincronización anterior de la dirección)
+        if (_tempIdToRealId.containsKey(shippingId)) {
+          final realId = _tempIdToRealId[shippingId]!;
+          operation.data['partner_shipping_id'] = realId;
+          print('✅ SYNC_COORDINATOR: ID temporal $shippingId → real $realId');
+        } else {
+          print('⚠️ SYNC_COORDINATOR: ID temporal $shippingId no encontrado en cache');
+          print('🔄 SYNC_COORDINATOR: Eliminando partner_shipping_id temporal');
+          operation.data.remove('partner_shipping_id');
+          print('✅ SYNC_COORDINATOR: partner_shipping_id eliminado - orden se creará sin dirección');
+        }
+      }
+    }
+    
+    // Continuar con la sincronización normal
+    return await _syncSingleOperation(operation);
+  }
+
   /// Sincroniza una operación de creación
   Future<bool> _syncCreateOperation(PendingOperation operation) async {
     try {
+      // Eliminar ID temporal antes de enviar (si existe)
+      final createData = Map<String, dynamic>.from(operation.data);
+      int? tempId;
+      
+      // Si es una dirección, extraer el ID temporal para mapearlo
+      if (operation.model == 'res.partner' && createData.containsKey('id') && createData['id'] is int) {
+        tempId = createData.remove('id') as int?;
+        print('📍 SYNC_COORDINATOR: ID temporal removido: $tempId');
+      }
+      
       final result = await _odooClient.callKw({
         'model': operation.model,
         'method': 'create',
-        'args': [operation.data],
+        'args': [createData],
         'kwargs': {},
       });
       
       if (result is int && result > 0) {
         print('✅ SYNC_COORDINATOR: Registro creado - ${operation.model} ID: $result');
+        
+        // Si es una dirección con ID temporal, mapear a ID real
+        if (tempId != null && tempId < 0) {
+          _tempIdToRealId[tempId] = result;
+          print('📍 SYNC_COORDINATOR: ID temporal $tempId → real $result');
+        }
+        
+        // Si es una dirección (res.partner), actualizar cache local
+        if (operation.model == 'res.partner') {
+          await _updateAddressCache(result);
+        }
+        
         return true;
       } else {
         print('❌ SYNC_COORDINATOR: Error creando registro - resultado inválido: $result');
@@ -202,6 +284,55 @@ class SyncCoordinatorRepository {
     } catch (e) {
       print('❌ SYNC_COORDINATOR: Error en creación: $e');
       return false;
+    }
+  }
+  
+  /// Actualiza el cache local con una dirección recién creada
+  Future<void> _updateAddressCache(int addressId) async {
+    try {
+      print('🔄 SYNC_COORDINATOR: Actualizando cache local con dirección $addressId');
+      
+      // Leer la dirección recién creada del servidor
+      final readResponse = await _odooClient.callKw({
+        'model': 'res.partner',
+        'method': 'read',
+        'args': [[addressId]],
+        'kwargs': {
+          'fields': ['id', 'name', 'email', 'phone', 'is_company', 'customer_rank', 'supplier_rank', 
+                     'active', 'type', 'parent_id', 'commercial_partner_id', 'street', 'street2', 
+                     'city', 'city_id', 'state_id', 'country_id', 'zip']
+        },
+      });
+      
+      if (readResponse is List && readResponse.isNotEmpty) {
+        final addressJson = readResponse.first as Map<String, dynamic>;
+        
+        // Obtener direcciones del cache
+        final cachedData = _tenantCache.get('ShippingAddress_records', 
+          defaultValue: <Map<String, dynamic>>[]);
+        final List<Map<String, dynamic>> currentAddresses = cachedData is List
+            ? List<Map<String, dynamic>>.from((cachedData as List).map((e) => Map<String, dynamic>.from(e as Map)))
+            : [];
+        
+        // Verificar si la dirección ya existe en el cache
+        final existingIndex = currentAddresses.indexWhere((a) => a['id'] == addressId);
+        
+        if (existingIndex >= 0) {
+          // Actualizar dirección existente
+          currentAddresses[existingIndex] = addressJson;
+          print('🔄 SYNC_COORDINATOR: Dirección $addressId actualizada en cache');
+        } else {
+          // Agregar nueva dirección
+          currentAddresses.add(addressJson);
+          print('✅ SYNC_COORDINATOR: Dirección $addressId agregada al cache');
+        }
+        
+        // Guardar cache actualizado
+        await _tenantCache.put('ShippingAddress_records', currentAddresses);
+        print('✅ SYNC_COORDINATOR: Cache actualizado (total: ${currentAddresses.length})');
+      }
+    } catch (e) {
+      print('⚠️ SYNC_COORDINATOR: Error actualizando cache de dirección: $e');
     }
   }
 

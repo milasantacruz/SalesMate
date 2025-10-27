@@ -200,7 +200,7 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
       
       // Verificar si estamos offline antes de intentar llamar
       if (connectivity != netConnState.online) {
-        print('📴 PARTNER_REPO: Modo OFFLINE detectado - creando objeto temporal');
+        print('📴 PARTNER_REPO: Modo OFFLINE detectado - creando objeto temporal y encolando');
         print('⚠️ PARTNER_REPO: NO se llamará a env.orpc.callKw()');
         
         // Generar ID temporal negativo
@@ -209,7 +209,18 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
         
         print('📴 PARTNER_REPO: ID temporal asignado: $newAddressId');
         
-        // Crear objeto Partner temporal
+        // Incluir ID temporal en los datos que se guardan en la cola
+        final finalDataWithId = {
+          ...finalData,
+          'id': newAddressId, // Incluir ID temporal para mapeo
+        };
+        
+        // PASO 1: Encolar la operación de creación de la dirección
+        print('📴 PARTNER_REPO: Encolando creación de dirección con ID temporal...');
+        await _callQueue.createRecord(modelName, finalDataWithId);
+        print('📴 PARTNER_REPO: Dirección encolada exitosamente');
+        
+        // PASO 2: Crear objeto Partner temporal para uso inmediato
         final tempAddress = Partner(
           id: newAddressId,
           name: finalData['name'] as String,
@@ -233,6 +244,7 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
         
         print('📴 PARTNER_REPO: Objeto temporal creado exitosamente');
         print('📴 PARTNER_REPO: Retornando dirección temporal para uso offline');
+        print('📴 PARTNER_REPO: NOTA: La dirección será sincronizada cuando haya conexión');
         return tempAddress;
       }
       
@@ -261,6 +273,26 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
       if (readResponse is List && readResponse.isNotEmpty) {
         final newAddress = Partner.fromJson(readResponse.first);
         print('✅ PARTNER_REPO: Dirección leída: ${newAddress.name}');
+        
+        // Agregar la nueva dirección al cache local
+        if (tenantCache != null) {
+          // Obtener direcciones del cache
+          final cachedData = tenantCache!.get('ShippingAddress_records', 
+            defaultValue: <Map<String, dynamic>>[]);
+          final List<Partner> currentAddresses = cachedData is List
+              ? (cachedData as List).map((json) => Partner.fromJson(Map<String, dynamic>.from(json))).toList()
+              : [];
+          
+          // Agregar la nueva dirección
+          currentAddresses.add(newAddress);
+          
+          // Guardar en cache tenant-aware
+          await tenantCache!.put('ShippingAddress_records', 
+            currentAddresses.map((a) => a.toJson()).toList());
+          
+          print('✅ PARTNER_REPO: Nueva dirección agregada al cache local (total: ${currentAddresses.length})');
+        }
+        
         return newAddress;
       }
       

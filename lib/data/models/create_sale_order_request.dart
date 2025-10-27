@@ -11,6 +11,7 @@ class CreateSaleOrderRequest extends Equatable {
   final int userId; // Re-agregado
   final List<SaleOrderLine> orderLines;
   final String state;
+  final int? partnerShippingId;
 
   const CreateSaleOrderRequest({
     this.partnerId,
@@ -21,11 +22,12 @@ class CreateSaleOrderRequest extends Equatable {
     required this.userId, // Re-agregado
     required this.orderLines,
     this.state = 'draft',
+    this.partnerShippingId,
   });
 
   /// Convierte a JSON para enviar a Odoo
   Map<String, dynamic> toJson() {
-    return {
+    final json = {
       'partner_id': partnerId,
       'date_order': dateOrder,
       'user_id': userId, // Re-agregado
@@ -33,6 +35,13 @@ class CreateSaleOrderRequest extends Equatable {
       'order_line':
           orderLines.map((line) => [0, 0, line.toCreateJson()]).toList(),
     };
+    
+    // Solo agregar partner_shipping_id si existe
+    if (partnerShippingId != null) {
+      json['partner_shipping_id'] = partnerShippingId;
+    }
+    
+    return json;
   }
 
   /// Crea una copia con nuevos valores
@@ -45,6 +54,7 @@ class CreateSaleOrderRequest extends Equatable {
     int? userId, // Re-agregado
     List<SaleOrderLine>? orderLines,
     String? state,
+    int? partnerShippingId,
   }) {
     return CreateSaleOrderRequest(
       partnerId: partnerId ?? this.partnerId,
@@ -55,6 +65,7 @@ class CreateSaleOrderRequest extends Equatable {
       userId: userId ?? this.userId, // Re-agregado
       orderLines: orderLines ?? this.orderLines,
       state: state ?? this.state,
+      partnerShippingId: partnerShippingId ?? this.partnerShippingId,
     );
   }
 
@@ -113,5 +124,8 @@ class CreateSaleOrderRequest extends Equatable {
         userId, // Re-agregado
         orderLines,
         state,
+        partnerShippingId,
       ];
 }
+
+

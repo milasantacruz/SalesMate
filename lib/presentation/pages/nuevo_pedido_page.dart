@@ -726,9 +726,11 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     );
 
     if (newAddress != null) {
+      print('✅ NUEVO_PEDIDO: Dirección creada: ${newAddress.name} (ID: ${newAddress.id})');
       setState(() {
         _deliveryAddresses.add(newAddress);
         _selectedShippingAddress = newAddress;
+        print('✅ NUEVO_PEDIDO: _selectedShippingAddress establecido a ${newAddress.id}');
       });
       
       if (mounted) {
@@ -1015,6 +1017,11 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
       currentUserId = 2; // Usuario por defecto
     }
 
+    // Logs de diagnóstico
+    print('🔍 _saveDraft: Creando orden...');
+    print('🔍 _saveDraft: _selectedShippingAddress = ${_selectedShippingAddress != null ? "${_selectedShippingAddress!.name} (ID: ${_selectedShippingAddress!.id})" : "NULL"}');
+    print('🔍 _saveDraft: _deliveryAddresses.length = ${_deliveryAddresses.length}');
+    
     final request = CreateSaleOrderRequest(
       partnerId: _selectedPartner!.id,
       partnerName: _selectedPartner!.name,
@@ -1024,7 +1031,10 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
       userId: currentUserId,
       orderLines: _orderLines,
       state: 'draft',
+      partnerShippingId: _selectedShippingAddress?.id,
     );
+    
+    print('🔍 _saveDraft: request.toJson() = ${request.toJson()}');
 
     context
         .read<SaleOrderBloc>()
@@ -1088,12 +1098,18 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     };
 
     // Si hay dirección de despacho seleccionada, agregarla
+    print('🔍 NUEVO_PEDIDO: Antes de agregar partner_shipping_id');
+    print('🔍 NUEVO_PEDIDO: _selectedShippingAddress: ${_selectedShippingAddress != null ? "NO ES NULL" : "ES NULL"}');
     if (_selectedShippingAddress != null) {
+      print('🔍 NUEVO_PEDIDO: _selectedShippingAddress.id: ${_selectedShippingAddress!.id}');
+      print('🔍 NUEVO_PEDIDO: _selectedShippingAddress.name: ${_selectedShippingAddress!.name}');
       orderData['partner_shipping_id'] = _selectedShippingAddress!.id;
-      print('📦 Orden con dirección de despacho: ${_selectedShippingAddress!.name} (ID: ${_selectedShippingAddress!.id})');
+      print('✅ NUEVO_PEDIDO: partner_shipping_id agregado: ${_selectedShippingAddress!.id}');
+    } else {
+      print('⚠️ NUEVO_PEDIDO: NO hay dirección seleccionada - partner_shipping_id no se agregará');
     }
 
-    print('📦 Creando orden con datos: $orderData');
+    print('📦 NUEVO_PEDIDO: Creando orden con datos: $orderData');
 
     context
         .read<SaleOrderBloc>()

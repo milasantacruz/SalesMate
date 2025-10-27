@@ -302,6 +302,12 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         return serverIdStr;
       } else {
         print('📱 SALE_ORDER_REPO: OFFLINE - Usando sistema offline');
+        print('📱 SALE_ORDER_REPO: Datos que se encolarán: $enrichedData');
+        print('📱 SALE_ORDER_REPO: Tiene partner_shipping_id: ${enrichedData.containsKey('partner_shipping_id')}');
+        if (enrichedData.containsKey('partner_shipping_id')) {
+          print('📱 SALE_ORDER_REPO: partner_shipping_id valor: ${enrichedData['partner_shipping_id']}');
+        }
+        
         // Solo usar offline cuando realmente no hay conexión
         final localId = await _callQueue.createRecord(modelName, enrichedData);
         

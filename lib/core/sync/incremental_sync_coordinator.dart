@@ -1,9 +1,9 @@
-import 'package:odoo_repository/odoo_repository.dart';
 import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/shipping_address_repository.dart';
+import '../../core/tenant/tenant_aware_cache.dart';
 import 'sync_marker_store.dart';
 import 'incremental_sync_state.dart';
 
@@ -21,7 +21,7 @@ class IncrementalSyncCoordinator {
   final SaleOrderRepository _saleOrderRepo;
   final ShippingAddressRepository _shippingAddressRepo;
   final SyncMarkerStore _markerStore;
-  final OdooKv _cache;
+  final TenantAwareCache _tenantCache;
 
   /// Callback para reportar progreso en tiempo real
   Function(IncrementalSyncState)? onProgress;
@@ -36,14 +36,14 @@ class IncrementalSyncCoordinator {
     required SaleOrderRepository saleOrderRepo,
     required ShippingAddressRepository shippingAddressRepo,
     required SyncMarkerStore markerStore,
-    required OdooKv cache,
+    required TenantAwareCache tenantCache,
   })  : _partnerRepo = partnerRepo,
         _productRepo = productRepo,
         _employeeRepo = employeeRepo,
         _saleOrderRepo = saleOrderRepo,
         _shippingAddressRepo = shippingAddressRepo,
         _markerStore = markerStore,
-        _cache = cache;
+        _tenantCache = tenantCache;
 
   /// Ejecuta sincronización incremental para todos los módulos
   /// 
@@ -209,12 +209,12 @@ class IncrementalSyncCoordinator {
 
     print('🔄 INCREMENTAL_SYNC [${module.displayName}]: Mergeando con cache key "$cacheKey"');
 
-    // 1. Cargar caché actual
-    final cachedData = _cache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
+    // 1. Cargar caché actual usando tenant-aware cache
+    final cachedData = _tenantCache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
     final List<Map<String, dynamic>> cachedRecords = cachedData is List
         ? List<Map<String, dynamic>>.from(
-            cachedData.map((e) => e is Map ? Map<String, dynamic>.from(e) : {}))
-        : [];
+            (cachedData as List).map((e) => Map<String, dynamic>.from(e as Map)))
+        : <Map<String, dynamic>>[];
 
     print('🔄 INCREMENTAL_SYNC [${module.displayName}]: ${cachedRecords.length} registros en caché actual');
 
@@ -242,9 +242,9 @@ class IncrementalSyncCoordinator {
       }
     }
 
-    // 4. Guardar caché actualizada
+    // 4. Guardar caché actualizada usando tenant-aware cache
     final updatedCache = cachedMap.values.toList();
-    await _cache.put(cacheKey, updatedCache);
+    await _tenantCache.put(cacheKey, updatedCache);
     
     print('✅ INCREMENTAL_SYNC [${module.displayName}]: Cache actualizado - ${updatedCache.length} registros totales');
 

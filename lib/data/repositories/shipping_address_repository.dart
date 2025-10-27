@@ -213,18 +213,18 @@ class ShippingAddressRepository extends OfflineOdooRepository<Partner> {
   List<Partner> getCachedShippingAddressesForPartner(int commercialPartnerId) {
     final allAddresses = getCachedShippingAddresses();
     
-    print('🔍 SHIPPING_ADDRESS_REPO: Filtrando direcciones para partner $commercialPartnerId');
-    print('🔍 SHIPPING_ADDRESS_REPO: Total direcciones en caché: ${allAddresses.length}');
+    //print('🔍 SHIPPING_ADDRESS_REPO: Filtrando direcciones para partner $commercialPartnerId');
+   // print('🔍 SHIPPING_ADDRESS_REPO: Total direcciones en caché: ${allAddresses.length}');
     
     // Log de cada dirección para debugging
     for (int i = 0; i < allAddresses.length; i++) {
       final addr = allAddresses[i];
-      print('🔍 SHIPPING_ADDRESS_REPO: Dirección $i: ID=${addr.id}, Name=${addr.name}, CommercialPartnerId=${addr.commercialPartnerId}');
+      //print('🔍 SHIPPING_ADDRESS_REPO: Dirección $i: ID=${addr.id}, Name=${addr.name}, CommercialPartnerId=${addr.commercialPartnerId}');
     }
     
     final filteredAddresses = allAddresses.where((address) => address.commercialPartnerId == commercialPartnerId).toList();
     
-    print('🔍 SHIPPING_ADDRESS_REPO: Direcciones filtradas para partner $commercialPartnerId: ${filteredAddresses.length}');
+    //print('🔍 SHIPPING_ADDRESS_REPO: Direcciones filtradas para partner $commercialPartnerId: ${filteredAddresses.length}');
     
     return filteredAddresses;
   }
