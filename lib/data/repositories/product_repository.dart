@@ -117,38 +117,108 @@ class ProductRepository extends OfflineOdooRepository<Product> {
         try {
           final allRecordsJson = await _getAllRecordsFromServer();
           final allRecords = allRecordsJson.map((item) => fromJson(item as Map<String, dynamic>)).toList();
-          await cache.put('Product_records', allRecords.map((r) => r.toJson()).toList());
-          print('🔍 PRODUCT_REPO: Cache updated successfully with ${allRecords.length} records');
+          
+          // 🔍 DIAGNÓSTICO: Verificar qué cache se está usando para guardar
+          print('🔍 DIAGNÓSTICO PRODUCT (SAVE): tenantCache != null: ${tenantCache != null}');
+          
+          if (tenantCache != null) {
+            print('🔍 DIAGNÓSTICO PRODUCT (SAVE): Guardando en tenantCache');
+            await tenantCache!.put('Product_records', allRecords.map((r) => r.toJson()).toList());
+            print('✅ PRODUCT_REPO: Cache guardado usando tenantCache con ${allRecords.length} records');
+          } else {
+            print('🔍 DIAGNÓSTICO PRODUCT (SAVE): Guardando en cache normal');
+            await cache.put('Product_records', allRecords.map((r) => r.toJson()).toList());
+            print('✅ PRODUCT_REPO: Cache guardado usando cache normal con ${allRecords.length} records');
+          }
         } catch (e) {
           print('⚠️ PRODUCT_REPO: Error updating full cache (latestRecords still valid): $e');
         }
       } else {
         // OFFLINE: Cargar datos desde la caché local y aplicar filtros localmente
-        final cachedData = cache.get('Product_records', defaultValue: <Map<String, dynamic>>[]);
+        print('📴 DIAGNÓSTICO PRODUCT: Modo OFFLINE - cargando desde cache');
+        
+        // 🔍 DIAGNÓSTICO: Verificar qué cache se está usando
+        print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): tenantCache != null: ${tenantCache != null}');
+        
+        dynamic cachedData;
+        if (tenantCache != null) {
+          print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Buscando en tenantCache');
+          cachedData = tenantCache!.get('Product_records');
+          print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Datos encontrados en tenantCache: ${cachedData != null}');
+          if (cachedData != null) {
+            print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Tipo: ${cachedData.runtimeType}');
+            print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Es List: ${cachedData is List}');
+            if (cachedData is List) {
+              print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Length: ${cachedData.length}');
+            }
+          }
+        } else {
+          print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): tenantCache es null, usando cache normal');
+        }
+        
+        if (cachedData == null) {
+          print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Intentando con cache normal...');
+          cachedData = cache.get('Product_records', defaultValue: <Map<String, dynamic>>[]);
+          print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Datos encontrados en cache normal: ${cachedData != null}');
+        }
+        
+        cachedData ??= <Map<String, dynamic>>[];
+        
         if (cachedData is List) {
-          final allCachedRecords = cachedData.map((json) => fromJson(json as Map<String, dynamic>)).toList();
+          print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Convirtiendo ${cachedData.length} elementos...');
+          // ✅ FIX: Usar Map.from() en lugar de cast directo
+          final allCachedRecords = cachedData.map((json) => fromJson(Map<String, dynamic>.from(json))).toList();
           // Aplicar filtros localmente
           latestRecords = _applyLocalFilters(allCachedRecords);
+          print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): Después de filtros: ${latestRecords.length}');
         } else {
           latestRecords = <Product>[];
+          print('🔍 DIAGNÓSTICO PRODUCT (OFFLINE): cachedData NO es List');
         }
       }
     } on OdooException {
       // Si hay un error de Odoo (ej. sesión expirada), lo relanzamos
       rethrow;
-    } catch (_) {
+    } catch (e) {
       // Para otros errores (ej. de red), intentamos cargar desde caché como fallback
+      print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Error capturado, intentando cargar desde cache');
+      print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Error tipo: ${e.runtimeType}');
+      print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): tenantCache != null: ${tenantCache != null}');
+      
       try {
-        final cachedData = cache.get('Product_records', defaultValue: <Map<String, dynamic>>[]);
+        dynamic cachedData;
+        
+        if (tenantCache != null) {
+          print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Buscando en tenantCache');
+          cachedData = tenantCache!.get('Product_records');
+          print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Datos encontrados en tenantCache: ${cachedData != null}');
+          if (cachedData != null && cachedData is List) {
+            print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Length: ${cachedData.length}');
+          }
+        }
+        
+        if (cachedData == null) {
+          print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Intentando con cache normal...');
+          cachedData = cache.get('Product_records', defaultValue: <Map<String, dynamic>>[]);
+          print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Datos encontrados en cache normal: ${cachedData != null}');
+        }
+        
+        cachedData ??= <Map<String, dynamic>>[];
+        
         if (cachedData is List) {
-          final allCachedRecords = cachedData.map((json) => fromJson(json as Map<String, dynamic>)).toList();
+          print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Convirtiendo ${cachedData.length} elementos...');
+          // ✅ FIX: Usar Map.from() en lugar de cast directo
+          final allCachedRecords = cachedData.map((json) => fromJson(Map<String, dynamic>.from(json))).toList();
           // Aplicar filtros localmente
           latestRecords = _applyLocalFilters(allCachedRecords);
+          print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Después de filtros: ${latestRecords.length}');
         } else {
           latestRecords = <Product>[];
+          print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): cachedData NO es List');
         }
       } catch (cacheErr) {
         // Si la caché también falla, emitimos una lista vacía
+        print('🔍 DIAGNÓSTICO PRODUCT (ERROR CATCH): Error en cache: $cacheErr');
         latestRecords = <Product>[];
       }
     }

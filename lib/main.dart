@@ -1,9 +1,13 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'core/cache/custom_odoo_kv.dart';
 import 'core/di/injection_container.dart';
+import 'core/http/ssl_debug_override.dart';
 import 'data/repositories/partner_repository.dart';
 import 'data/repositories/employee_repository.dart';
 import 'data/repositories/sale_order_repository.dart';
@@ -33,6 +37,13 @@ import 'core/bootstrap/bootstrap_state.dart' as core;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // ⚠️ SOLO EN DESARROLLO: Bypass de certificados SSL
+  // Esto permite que la app funcione con hot reload sin errores de certificado
+  if (kDebugMode && !kIsWeb) {
+    print('🔧 MODO DEBUG: Activando bypass SSL para desarrollo');
+    HttpOverrides.global = DevHttpOverrides();
+  }
   
   // Inicializar Hive para cache
   await Hive.initFlutter();
