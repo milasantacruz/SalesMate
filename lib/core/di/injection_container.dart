@@ -27,6 +27,7 @@ import '../sync/incremental_sync_coordinator.dart';
 import '../tenant/tenant_aware_cache.dart';
 import '../tenant/tenant_admin_service.dart';
 import '../tenant/tenant_context.dart';
+import '../http/odoo_client_mobile.dart'; // ← Importar CookieClient
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -100,25 +101,27 @@ Future<bool> loginWithCredentials({
     print('👤 Usuario: $username');
     print('🔍 Cliente base URL ANTES: ${client.baseURL}');
     
-    // SI la URL del servidor cambió, recrear el cliente
-    final targetUrl = requestedUrl;
-    if (client.baseURL != targetUrl) {
-      print('🔄 URL cambió, recreando OdooClient...');
-      print('   Anterior: ${client.baseURL}');
-      print('   Nueva: $targetUrl');
-      
-      // Desregistrar el cliente anterior
-      if (getIt.isRegistered<OdooClient>()) {
-        await getIt.unregister<OdooClient>();
+      // SI la URL del servidor cambió, recrear el cliente
+      final targetUrl = requestedUrl;
+      if (client.baseURL != targetUrl) {
+        print('🔄 URL cambió, recreando OdooClient...');
+        print('   Anterior: ${client.baseURL}');
+        print('   Nueva: $targetUrl');
+        
+        // Desregistrar el cliente anterior
+        if (getIt.isRegistered<OdooClient>()) {
+          await getIt.unregister<OdooClient>();
+        }
+        
+        // Crear y registrar nuevo cliente con la URL correcta y CookieClient
+        final cookieClient = CookieClient();
+        final newClient = OdooClient(targetUrl, httpClient: cookieClient);
+        getIt.registerLazySingleton<OdooClient>(() => newClient);
+        client = newClient;
+        
+        print('✅ Nuevo cliente creado con URL: ${client.baseURL}');
+        print('✅ Cliente usa CookieClient: ${client.httpClient.runtimeType}');
       }
-      
-      // Crear y registrar nuevo cliente con la URL correcta
-      final newClient = OdooClientFactory.create(targetUrl);
-      getIt.registerLazySingleton<OdooClient>(() => newClient);
-      client = newClient;
-      
-      print('✅ Nuevo cliente creado con URL: ${client.baseURL}');
-    }
     
     print('🔍 Cliente base URL DESPUÉS: ${client.baseURL}');
     print('🔍 Cliente HTTP type: ${client.httpClient.runtimeType}');
@@ -576,13 +579,25 @@ Future<bool> checkExistingSession() async {
         if (getIt.isRegistered<OdooClient>()) {
           getIt.unregister<OdooClient>();
         }
-        final authenticatedHttpClient =
-            _ClientWithCookie(http.Client(), session.id);
+        
+        // ✅ FIX: Usar CookieClient en lugar de _ClientWithCookie para mantener los logs
+        final cookieClient = CookieClient();
+        cookieClient.addCookie('session_id', session.id);
+        
+        // ✅ FIX: Leer serverUrl del cache en lugar de usar AppConstants
+        final cachedServerUrl = cache.get('serverUrl') as String?;
+        final serverUrl = cachedServerUrl ?? AppConstants.odooServerURL;
+        print('🌐 SESIÓN: Usando serverUrl del cache: $serverUrl');
+        
         final odooClient = OdooClient(
-          AppConstants.odooServerURL,
-          httpClient: authenticatedHttpClient,
+          serverUrl,
+          httpClient: cookieClient,
         );
         getIt.registerSingleton<OdooClient>(odooClient);
+        
+        print('✅ SESIÓN: OdooClient recreado con CookieClient');
+        print('✅ SESIÓN: session_id agregado: ${session.id}');
+        print('✅ SESIÓN: BaseURL del cliente: ${odooClient.baseURL}');
 
         // ✅ FIX: Restaurar TenantContext desde cache
         final cachedLicenseNumber = cache.get('licenseNumber') as String?;

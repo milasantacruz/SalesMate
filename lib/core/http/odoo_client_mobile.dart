@@ -35,6 +35,12 @@ class CookieClient extends http.BaseClient {
       print('🔍 COOKIE_DEBUG: ✅ No hay cookies almacenadas');
     }
   }
+  
+  /// Agregar una cookie manualmente (útil para restaurar sesiones)
+  void addCookie(String name, String value) {
+    _cookies[name] = value;
+    print('🍪 COOKIE_DEBUG: Cookie agregada manualmente: $name = $value');
+  }
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -79,10 +85,13 @@ class CookieClient extends http.BaseClient {
     }
 
     try {
-      print('⏳ ANDROID: Enviando request...');
+      print('⏳ ANDROID: Enviando request a: ${request.url}');
+      print('⏳ ANDROID: Path: ${request.url.path}');
+      print('⏳ ANDROID: Es call_kw?: ${request.url.path.contains('call_kw')}');
+      
       final response = await _inner.send(request);
-      // print('✅ ANDROID: Response recibida - Status: ${response.statusCode}');
-      // print('📋 ANDROID: Response headers: ${response.headers}');
+      print('✅ ANDROID: Response recibida - Status: ${response.statusCode}');
+      print('✅ ANDROID: Content-Type: ${response.headers['content-type']}');
       
       // 🔍 DEBUG FASE 1: Logs específicos para LicenseService
       if (request.url.toString().contains('app.proandsys.net')) {
@@ -99,6 +108,38 @@ class CookieClient extends http.BaseClient {
       if (request.url.path.contains('call_kw')) {
         print('🎯 ANDROID: Esta es una llamada call_kw');
         print('🎯 ANDROID: URL completa: ${request.url}');
+        print('🎯 ANDROID: Status code: ${response.statusCode}');
+        print('🎯 ANDROID: Content-Type: ${response.headers['content-type']}');
+        
+        // 🔍 VERIFICAR SI ES HTML
+        final contentType = response.headers['content-type'] ?? '';
+        if (contentType.contains('text/html')) {
+          print('⚠️ ANDROID: RESPUESTA ES HTML, NO JSON!');
+          print('⚠️ ANDROID: Status code: ${response.statusCode}');
+          print('⚠️ ANDROID: Headers de respuesta completos:');
+          response.headers.forEach((key, value) {
+            print('⚠️ ANDROID:   $key: $value');
+          });
+          
+          // Leer el body para ver qué HTML se está devolviendo
+          final bodyStream = response.stream;
+          final bodyBytes = await bodyStream.toList();
+          final bodyStr = String.fromCharCodes(bodyBytes.expand((chunk) => chunk));
+          print('⚠️ ANDROID: Body length: ${bodyStr.length} chars');
+          print('⚠️ ANDROID: Body (primeros 300 chars): ${bodyStr.length > 300 ? bodyStr.substring(0, 300) : bodyStr}');
+          
+          // Recrear el stream para que el código original funcione
+          return http.StreamedResponse(
+            Stream.value(bodyBytes.expand((chunk) => chunk).toList()),
+            response.statusCode,
+            contentLength: bodyBytes.fold<int>(0, (sum, chunk) => sum + chunk.length),
+            request: response.request,
+            headers: response.headers,
+            isRedirect: response.isRedirect,
+            persistentConnection: response.persistentConnection,
+            reasonPhrase: response.reasonPhrase,
+          );
+        }
         
         // 🔥 CRÍTICO: Ver el payload exacto de call_kw
         if (request is http.Request && request.body.isNotEmpty) {

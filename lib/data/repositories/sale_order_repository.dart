@@ -316,20 +316,28 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         print('🔥 SALE_ORDER_REPO: Cliente HTTP: ${env.orpc.runtimeType}');
         print('🔥 SALE_ORDER_REPO: URL base: ${env.orpc.baseURL}');
         
-        final serverId = await env.orpc.callKw({
-          'model': modelName,
-          'method': 'create',
-          'args': [enrichedData],
-          'kwargs': {},
-        });
-        
-        print('🔥 SALE_ORDER_REPO: ===== RESPUESTA RECIBIDA =====');
-        print('🔥 SALE_ORDER_REPO: Respuesta raw: $serverId');
-        print('🔥 SALE_ORDER_REPO: Tipo de respuesta: ${serverId.runtimeType}');
-        print('🔥 SALE_ORDER_REPO: Es int: ${serverId is int}');
-        print('🔥 SALE_ORDER_REPO: Es String: ${serverId is String}');
-        print('🔥 SALE_ORDER_REPO: Es List: ${serverId is List}');
-        print('🔥 SALE_ORDER_REPO: Es Map: ${serverId is Map}');
+        dynamic serverId;
+        try {
+          serverId = await env.orpc.callKw({
+            'model': modelName,
+            'method': 'create',
+            'args': [enrichedData],
+            'kwargs': {},
+          });
+          
+          print('🔥 SALE_ORDER_REPO: ===== RESPUESTA RECIBIDA =====');
+          print('🔥 SALE_ORDER_REPO: Respuesta raw: $serverId');
+          print('🔥 SALE_ORDER_REPO: Tipo de respuesta: ${serverId.runtimeType}');
+          print('🔥 SALE_ORDER_REPO: Es int: ${serverId is int}');
+          print('🔥 SALE_ORDER_REPO: Es String: ${serverId is String}');
+          print('🔥 SALE_ORDER_REPO: Es List: ${serverId is List}');
+          print('🔥 SALE_ORDER_REPO: Es Map: ${serverId is Map}');
+        } catch (e) {
+          print('❌ SALE_ORDER_REPO: Error en callKw (creación real): $e');
+          print('❌ SALE_ORDER_REPO: Error tipo: ${e.runtimeType}');
+          // Re-lanzar para que el catch exterior lo maneje
+          rethrow;
+        }
         
         final serverIdStr = serverId.toString();
         print('🔥 SALE_ORDER_REPO: ID convertido a string: $serverIdStr');
@@ -537,21 +545,28 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         print('🧮 SALE_ORDER_REPO: Cliente HTTP: ${env.orpc.runtimeType}');
         print('🧮 SALE_ORDER_REPO: URL base: ${env.orpc.baseURL}');
         
-        tempOrderId = await env.orpc.callKw({
-          'model': 'sale.order',
-          'method': 'create',
-          'args': [tempOrderData], // ← Usar tempOrderData en lugar de duplicar
-          'kwargs': {},
-        });
-        
-        print('🧮 SALE_ORDER_REPO: ===== RESPUESTA TEMPORAL RECIBIDA =====');
-        print('🧮 SALE_ORDER_REPO: Respuesta raw: $tempOrderId');
-        print('🧮 SALE_ORDER_REPO: Tipo de respuesta: ${tempOrderId.runtimeType}');
-        print('🧮 SALE_ORDER_REPO: Es int: ${tempOrderId is int}');
-        print('🧮 SALE_ORDER_REPO: Es String: ${tempOrderId is String}');
-        print('🧮 SALE_ORDER_REPO: Es List: ${tempOrderId is List}');
-        print('🧮 SALE_ORDER_REPO: Es Map: ${tempOrderId is Map}');
-        print('🧮 SALE_ORDER_REPO: ===== FIN CREACIÓN TEMPORAL =====');
+        try {
+          tempOrderId = await env.orpc.callKw({
+            'model': 'sale.order',
+            'method': 'create',
+            'args': [tempOrderData], // ← Usar tempOrderData en lugar de duplicar
+            'kwargs': {},
+          });
+          
+          print('🧮 SALE_ORDER_REPO: ===== RESPUESTA TEMPORAL RECIBIDA =====');
+          print('🧮 SALE_ORDER_REPO: Respuesta raw: $tempOrderId');
+          print('🧮 SALE_ORDER_REPO: Tipo de respuesta: ${tempOrderId.runtimeType}');
+          print('🧮 SALE_ORDER_REPO: Es int: ${tempOrderId is int}');
+          print('🧮 SALE_ORDER_REPO: Es String: ${tempOrderId is String}');
+          print('🧮 SALE_ORDER_REPO: Es List: ${tempOrderId is List}');
+          print('🧮 SALE_ORDER_REPO: Es Map: ${tempOrderId is Map}');
+          print('🧮 SALE_ORDER_REPO: ===== FIN CREACIÓN TEMPORAL =====');
+        } catch (e) {
+          print('❌ SALE_ORDER_REPO: Error en callKw: $e');
+          print('❌ SALE_ORDER_REPO: Error tipo: ${e.runtimeType}');
+          // Re-lanzar para que el catch exterior lo maneje
+          rethrow;
+        }
         
         print('🧮 SALE_ORDER_REPO: Orden temporal creada con ID: $tempOrderId');
         
