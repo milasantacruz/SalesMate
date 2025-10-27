@@ -3,6 +3,7 @@ import '../../core/di/injection_container.dart';
 import '../../data/models/partner_model.dart';
 import '../../data/repositories/partner_repository.dart';
 import '../../data/repositories/odoo_call_queue_repository.dart';
+import '../../core/sync/incremental_sync_coordinator.dart';
 
 class OfflineTestPage extends StatefulWidget {
   const OfflineTestPage({super.key});
@@ -125,13 +126,37 @@ class _OfflineTestPageState extends State<OfflineTestPage> {
     try {
       _updateStatus('Iniciando sincronización...');
       
+      // PASO 1: Sincronizar cola offline (operaciones pendientes)
+      _updateStatus('📤 Sincronizando cola offline...');
       final result = await _callQueue.syncPendingOperations();
       
       if (result.success) {
-        _updateStatus('✅ Sincronización exitosa: ${result.syncedOperations} operaciones');
+        _updateStatus('✅ Cola offline sincronizada: ${result.syncedOperations} operaciones');
       } else {
-        _updateStatus('❌ Error en sincronización: ${result.message}');
+        _updateStatus('⚠️ Cola offline: ${result.message}');
       }
+      
+      // PASO 2: Ejecutar incremental sync (traer cambios del servidor)
+      _updateStatus('🔄 Ejecutando incremental sync...');
+      final incrementalSync = getIt<IncrementalSyncCoordinator>();
+      
+      incrementalSync.onProgress = (state) {
+        final progress = (state.progressPercent * 100).toStringAsFixed(0);
+        _updateStatus('📊 Incremental sync: $progress% completado');
+      };
+      
+      final syncResult = await incrementalSync.run();
+      
+      if (syncResult.modules.values.any((m) => m.errorMessage != null)) {
+        final errors = syncResult.modules.values
+            .where((m) => m.errorMessage != null)
+            .map((m) => m.errorMessage)
+            .join(', ');
+        _updateStatus('❌ Error en incremental sync: $errors');
+      } else {
+        _updateStatus('✅ Incremental sync completado: ${syncResult.totalRecordsMerged} registros actualizados');
+      }
+      
     } catch (e) {
       _updateStatus('❌ Error durante sincronización: $e');
     }
