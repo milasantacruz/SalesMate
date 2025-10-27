@@ -188,11 +188,13 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
           final cachedRecords = cachedData.map((json) {
             try {
               if (json is Map) {
-                return fromJson(json as Map<String, dynamic>);
+                // ✅ FIX: Usar Map.from() en lugar de cast directo para evitar errores con _Map<dynamic, dynamic>
+                return fromJson(Map<String, dynamic>.from(json));
               } else {
                 return null;
               }
             } catch (e) {
+              print('❌ OFFLINE_REPO: Error convirtiendo elemento: $e');
               return null;
             }
           }).whereType<T>().toList();

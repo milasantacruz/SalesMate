@@ -15,16 +15,23 @@ class PartnerBloc extends Bloc<PartnerEvent, PartnerState> {
 
   /// Maneja la carga inicial de partners
   Future<void> _onLoadPartners(LoadPartners event, Emitter<PartnerState> emit) async {
+    print('🔍 DIAGNÓSTICO PARTNER_BLOC: _onLoadPartners llamado');
     emit(PartnerLoading());
     try {
+      print('🔍 DIAGNÓSTICO PARTNER_BLOC: Llamando loadRecords()...');
       await _partnerRepository.loadRecords();
       final partners = _partnerRepository.latestRecords;
+      print('🔍 DIAGNÓSTICO PARTNER_BLOC: latestRecords.length: ${partners.length}');
+      
       if (partners.isEmpty) {
+        print('🔍 DIAGNÓSTICO PARTNER_BLOC: partners.isEmpty = true, emitiendo PartnerEmpty');
         emit(const PartnerEmpty(message: 'No se encontraron partners'));
-      } else {  
+      } else {
+        print('🔍 DIAGNÓSTICO PARTNER_BLOC: partners.isEmpty = false, emitiendo PartnerLoaded con ${partners.length} partners');
         emit(PartnerLoaded(partners));
       }
     } catch (e) {
+      print('🔍 DIAGNÓSTICO PARTNER_BLOC: Error capturado: $e');
       emit(PartnerError('Error cargando partners: $e'));
     }
   }

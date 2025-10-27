@@ -192,19 +192,41 @@ class ShippingAddressRepository extends OfflineOdooRepository<Partner> {
   /// Obtiene direcciones de despacho desde caché offline
   List<Partner> getCachedShippingAddresses() {
     try {
+      print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: Iniciando getCachedShippingAddresses()');
+      print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: tenantCache != null: ${tenantCache != null}');
+      
       // ✅ v2.0: Usar tenantCache si está disponible
-      final cachedData = tenantCache != null
-          ? tenantCache!.get('ShippingAddress_records', defaultValue: <Map<String, dynamic>>[])
-          : cache.get('ShippingAddress_records', defaultValue: <Map<String, dynamic>>[]);
+      dynamic cachedData;
+      
+      if (tenantCache != null) {
+        print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: Buscando en tenantCache');
+        cachedData = tenantCache!.get('ShippingAddress_records');
+        print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: cachedData != null: ${cachedData != null}');
+        if (cachedData != null) {
+          print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: cachedData tipo: ${cachedData.runtimeType}');
+          print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: cachedData is List: ${cachedData is List}');
+          if (cachedData is List) {
+            print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: Lista tiene ${cachedData.length} elementos');
+          }
+        }
+      } else {
+        print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: Usando cache normal');
+        cachedData = cache.get('ShippingAddress_records', defaultValue: <Map<String, dynamic>>[]);
+      }
       
       if (cachedData is List) {
-        final cachedAddresses = cachedData.map((json) => fromJson(json as Map<String, dynamic>)).toList();
+        print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: Convirtiendo ${cachedData.length} elementos...');
+        // ✅ FIX: Usar Map.from() en lugar de cast directo para evitar errores con _Map<dynamic, dynamic>
+        final cachedAddresses = cachedData.map((json) => fromJson(Map<String, dynamic>.from(json))).toList();
         print('📍 SHIPPING_ADDRESS_REPO: ${cachedAddresses.length} direcciones cargadas desde caché');
         return cachedAddresses;
+      } else {
+        print('🔍 DIAGNÓSTICO SHIPPING_ADDRESS: cachedData NO es List, es: ${cachedData.runtimeType}');
       }
       return [];
     } catch (e) {
       print('❌ SHIPPING_ADDRESS_REPO: Error cargando desde caché: $e');
+      print('❌ SHIPPING_ADDRESS_REPO: Error tipo: ${e.runtimeType}');
       return [];
     }
   }
