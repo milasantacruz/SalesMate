@@ -124,7 +124,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
           // Botón de prueba offline
           IconButton(
-            icon: const Icon(Icons.offline_bolt, color: Colors.white),
+            icon: const Icon(Icons.offline_bolt, color: Color.fromARGB(255, 255, 56, 152)),
             onPressed: () {
               Navigator.push(
                 context,
