@@ -211,10 +211,21 @@ class IncrementalSyncCoordinator {
 
     // 1. Cargar caché actual usando tenant-aware cache
     final cachedData = _tenantCache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
-    final List<Map<String, dynamic>> cachedRecords = cachedData is List
-        ? List<Map<String, dynamic>>.from(
-            (cachedData as List).map((e) => Map<String, dynamic>.from(e as Map)))
-        : <Map<String, dynamic>>[];
+    
+    // Convertir de forma robusta para evitar errores de tipo
+    List<Map<String, dynamic>> cachedRecords = [];
+    if (cachedData != null && cachedData is List) {
+      for (final item in cachedData) {
+        try {
+          final itemMap = item;
+          if (itemMap is Map) {
+            cachedRecords.add(Map<String, dynamic>.from(itemMap));
+          }
+        } catch (e) {
+          print('⚠️ INCREMENTAL_SYNC: Error convirtiendo registro: $e');
+        }
+      }
+    }
 
     print('🔄 INCREMENTAL_SYNC [${module.displayName}]: ${cachedRecords.length} registros en caché actual');
 

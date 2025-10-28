@@ -186,7 +186,8 @@ class ShippingAddressRepository extends OfflineOdooRepository<Partner> {
     final records = response as List<dynamic>;
     print('🔄 SHIPPING_ADDRESS_REPO: ${records.length} direcciones modificadas desde $since');
     
-    return records.cast<Map<String, dynamic>>();
+    // Convertir cada record a Map<String, dynamic> para evitar errores de tipo
+    return records.map((record) => Map<String, dynamic>.from(record)).toList();
   }
 
   /// Obtiene direcciones de despacho desde caché offline

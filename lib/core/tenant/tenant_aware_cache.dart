@@ -31,12 +31,15 @@ class TenantAwareCache {
   /// Ejemplo:
   /// ```dart
   /// TenantContext.setTenant('POF0001', 'db');
-  /// final partners = cache.get<List>('Partner_records');
+  /// final partners = cache.get('Partner_records');
   /// // Busca en: "POF0001:Partner_records"
   /// ```
   /// 
+  /// ⚠️ Retorna `dynamic` para evitar errores de casting prematuro.
+  /// El caller debe hacer conversión robusta si necesita tipo específico.
+  /// 
   /// Lanza [TenantException] si no hay tenant activo.
-  T? get<T>(String key, {T? defaultValue}) {
+  dynamic get(String key, {dynamic defaultValue}) {
     final scopedKey = TenantContext.scopeKey(key);
     final value = _kv.get(scopedKey, defaultValue: defaultValue);
     
@@ -54,7 +57,7 @@ class TenantAwareCache {
       print('💾 TENANT_CACHE: GET "$key" → "$scopedKey" (null o defaultValue)');
     }
     
-    return value as T?;
+    return value;
   }
   
   /// Guarda un valor en el cache con scope del tenant actual

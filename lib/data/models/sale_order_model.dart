@@ -51,8 +51,16 @@ class SaleOrder extends Equatable implements OdooRecord {
   /// Crea una SaleOrder desde JSON
   factory SaleOrder.fromJson(Map<String, dynamic> json) {
     // Helper robusto para parsear campos de relación (Many2one)
+    // ✅ MEJORADO: Acepta tanto List [id, name] como int directamente
     int? parseMany2oneId(dynamic value) {
       if (value == null || value == false) return null;
+      
+      // Caso 1: Es un entero directo (desde cache offline)
+      if (value is int) {
+        return value;
+      }
+      
+      // Caso 2: Es una List [id, name] (desde Odoo o cache enriquecido)
       if (value is List && value.isNotEmpty) {
         try {
           return (value[0] as num?)?.toInt();
@@ -61,15 +69,27 @@ class SaleOrder extends Equatable implements OdooRecord {
           return null;
         }
       }
+      
+      // Caso 3: Es un num (double, etc.)
       if (value is num) return value.toInt();
+      
       return null;
     }
 
     String? parseMany2oneName(dynamic value) {
       if (value == null || value == false) return null;
-      if (value is List && value.length > 1 ) {
+      
+      // ✅ MEJORADO: Si es int, intentar obtener nombre desde cache (si está disponible)
+      if (value is int) {
+        // Por ahora retornar null, pero en el futuro podríamos buscar en cache
+        return null;
+      }
+      
+      // Formato estándar de Odoo: List [id, name]
+      if (value is List && value.length > 1) {
         return value[1] as String?;
       }
+      
       return null;
     }
 

@@ -141,6 +141,10 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Pedido creado exitosamente (ID: ${state.orderId})')),
           );
+          
+          // ✅ FIX BUG-002: Refrescar la lista antes de salir
+          context.read<SaleOrderBloc>().add(RefreshSaleOrders());
+          
           Navigator.of(context).pop();
         } else if (state is SaleOrderError) {
           setState(() => _isLoading = false);

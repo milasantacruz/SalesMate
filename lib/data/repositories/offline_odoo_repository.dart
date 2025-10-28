@@ -85,7 +85,7 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
           print('🔍 OFFLINE_REPO: Usando tenantCache: ${tenantCache != null}');
           
           final cachedData = tenantCache != null
-              ? tenantCache!.get<List>(cacheKey)
+              ? tenantCache!.get(cacheKey, defaultValue: [])
               : cache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
               
           if (cachedData != null) {
@@ -151,7 +151,7 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
         print('🔍 OFFLINE_REPO: Usando tenantCache: ${tenantCache != null}');
         
         final cachedData = tenantCache != null
-            ? tenantCache!.get<List>(cacheKey)
+            ? tenantCache!.get(cacheKey, defaultValue: [])
             : cache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
             
         print('💾 OFFLINE_REPO: Datos encontrados en cache: ${cachedData != null}');
@@ -223,7 +223,7 @@ abstract class OfflineOdooRepository<T extends OdooRecord>
       try {
         final cacheKey = '${T.toString()}_records';
         final cachedData = tenantCache != null
-            ? tenantCache!.get<List>(cacheKey)
+            ? tenantCache!.get(cacheKey, defaultValue: [])
             : cache.get(cacheKey, defaultValue: <Map<String, dynamic>>[]);
             
         if (cachedData is List) {

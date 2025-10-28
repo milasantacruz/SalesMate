@@ -54,7 +54,7 @@ void main() {
         {'id': 1, 'name': 'Partner A'},
       ]);
       
-      final result = cache.get<List>('Partner_records');
+      final result = cache.get('Partner_records') as List?;
       
       expect(result, isNotNull);
       expect(result!.length, equals(1));
@@ -76,19 +76,19 @@ void main() {
       
       // Verificar POF0001
       TenantContext.setTenant('POF0001', 'db_pof0001');
-      final data1 = cache.get<List>('Partner_records');
+      final data1 = cache.get('Partner_records') as List?;
       expect(data1![0]['name'], equals('Partner A from POF0001'));
       
       // Verificar POF0003
       TenantContext.setTenant('POF0003', 'db_pof0003');
-      final data3 = cache.get<List>('Partner_records');
+      final data3 = cache.get('Partner_records') as List?;
       expect(data3![0]['name'], equals('Partner B from POF0003'));
     });
 
     test('get() retorna null si no existe dato', () {
       TenantContext.setTenant('POF0001', 'db_pof0001');
       
-      final result = cache.get<List>('NonExistent_records');
+      final result = cache.get('NonExistent_records');
       
       expect(result, isNull);
     });
@@ -100,7 +100,7 @@ void main() {
       );
       
       expect(
-        () => cache.get<List>('Partner_records'),
+        () => cache.get('Partner_records'),
         throwsA(isA<TenantException>()),
       );
     });
@@ -111,10 +111,10 @@ void main() {
       TenantContext.setTenant('POF0001', 'db_pof0001');
       
       await cache.put('Partner_records', [{'id': 1}]);
-      expect(cache.get<List>('Partner_records'), isNotNull);
+      expect(cache.get('Partner_records'), isNotNull);
       
       await cache.delete('Partner_records');
-      expect(cache.get<List>('Partner_records'), isNull);
+      expect(cache.get('Partner_records'), isNull);
     });
 
     test('delete() solo elimina del tenant actual', () async {
@@ -131,11 +131,11 @@ void main() {
       await cache.delete('Partner_records');
       
       // Verificar que POF0001 fue eliminado
-      expect(cache.get<List>('Partner_records'), isNull);
+      expect(cache.get('Partner_records'), isNull);
       
       // Verificar que POF0003 sigue existiendo
       TenantContext.setTenant('POF0003', 'db_pof0003');
-      expect(cache.get<List>('Partner_records'), isNotNull);
+      expect(cache.get('Partner_records'), isNotNull);
     });
   });
 
@@ -214,7 +214,7 @@ void main() {
       // POF0003 debe seguir existiendo
       expect(cache.getAllKeysForTenant('POF0003').length, equals(1));
       TenantContext.setTenant('POF0003', 'db_pof0003');
-      expect(cache.get<List>('Partner_records'), isNotNull);
+      expect(cache.get('Partner_records'), isNotNull);
     });
 
     test('No lanza error si tenant no existe', () async {

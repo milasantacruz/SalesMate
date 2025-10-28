@@ -249,10 +249,17 @@ class SyncCoordinatorRepository {
       final createData = Map<String, dynamic>.from(operation.data);
       int? tempId;
       
-      // Si es una dirección, extraer el ID temporal para mapearlo
-      if (operation.model == 'res.partner' && createData.containsKey('id') && createData['id'] is int) {
+      // Extraer el ID temporal (si existe)
+      if (createData.containsKey('id') && createData['id'] is int) {
         tempId = createData.remove('id') as int?;
         print('📍 SYNC_COORDINATOR: ID temporal removido: $tempId');
+      }
+      
+      // ✅ FILTRAR: Remover campos de enriquecimiento que Odoo no acepta
+      if (operation.model == 'sale.order') {
+        createData.remove('partner_name');
+        createData.remove('partner_shipping_name');
+        print('🧹 SYNC_COORDINATOR: Campos de enriquecimiento removidos para sale.order');
       }
       
       final result = await _odooClient.callKw({
@@ -265,14 +272,16 @@ class SyncCoordinatorRepository {
       if (result is int && result > 0) {
         print('✅ SYNC_COORDINATOR: Registro creado - ${operation.model} ID: $result');
         
-        // Si es una dirección con ID temporal, mapear a ID real
+        // Mapear ID temporal a ID real para dependencias
         if (tempId != null && tempId < 0) {
           _tempIdToRealId[tempId] = result;
           print('📍 SYNC_COORDINATOR: ID temporal $tempId → real $result');
         }
         
-        // Si es una dirección (res.partner), actualizar cache local
-        if (operation.model == 'res.partner') {
+        // Actualizar cache local según el modelo
+        if (operation.model == 'sale.order') {
+          await _updateSaleOrderCache(tempId, result, createData);
+        } else if (operation.model == 'res.partner') {
           await _updateAddressCache(result);
         }
         
@@ -284,6 +293,40 @@ class SyncCoordinatorRepository {
     } catch (e) {
       print('❌ SYNC_COORDINATOR: Error en creación: $e');
       return false;
+    }
+  }
+
+  /// Actualiza cache local de sale orders después de sincronización
+  Future<void> _updateSaleOrderCache(int? tempId, int serverId, Map<String, dynamic> orderData) async {
+    try {
+      if (tempId == null) {
+        print('⚠️ SYNC_COORDINATOR: No hay ID temporal para actualizar');
+        return;
+      }
+      
+      final cacheKey = 'sale_orders';
+      final cachedData = _tenantCache.get(cacheKey, defaultValue: []);
+      
+      if (cachedData != null) {
+        final index = cachedData.indexWhere((o) => o is Map && o['id'] == tempId);
+        if (index >= 0) {
+          // Actualizar con ID real
+          final updatedOrder = Map<String, dynamic>.from(cachedData[index])
+            ..['id'] = serverId
+            ..['state'] = 'sent';
+          
+          cachedData[index] = updatedOrder;
+          
+          // Guardar de vuelta
+          await _tenantCache.put(cacheKey, cachedData);
+          
+          print('✅ SYNC_COORDINATOR: Cache actualizado: sale.order temporal $tempId → real $serverId');
+        } else {
+          print('⚠️ SYNC_COORDINATOR: No se encontró orden temporal $tempId en cache');
+        }
+      }
+    } catch (e) {
+      print('⚠️ SYNC_COORDINATOR: Error actualizando cache de sale orders: $e');
     }
   }
   

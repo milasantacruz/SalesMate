@@ -29,6 +29,7 @@ class CreateSaleOrderRequest extends Equatable {
   Map<String, dynamic> toJson() {
     final json = {
       'partner_id': partnerId,
+      'partner_name': partnerName,  // ✅ AGREGADO: Para enriquecimiento
       'date_order': dateOrder,
       'user_id': userId, // Re-agregado
       'state': state,
@@ -39,6 +40,9 @@ class CreateSaleOrderRequest extends Equatable {
     // Solo agregar partner_shipping_id si existe
     if (partnerShippingId != null) {
       json['partner_shipping_id'] = partnerShippingId;
+      // ✅ AGREGADO: Nombre de dirección para enriquecimiento
+      // TODO: Obtener nombre de shipping address desde cache
+      json['partner_shipping_name'] = deliveryAddress;
     }
     
     return json;

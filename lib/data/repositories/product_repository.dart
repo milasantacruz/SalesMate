@@ -361,7 +361,8 @@ class ProductRepository extends OfflineOdooRepository<Product> {
     final records = response as List<dynamic>;
     print('🔄 PRODUCT_REPO: ${records.length} registros incrementales obtenidos');
     
-    return records.cast<Map<String, dynamic>>();
+    // Convertir cada record a Map<String, dynamic> para evitar errores de tipo
+    return records.map((record) => Map<String, dynamic>.from(record)).toList();
   }
 }
 

@@ -248,7 +248,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       
       if (tenantCache != null) {
         print('🔍 DIAGNÓSTICO SALE_ORDER: Buscando en tenantCache con key: "$cacheKey"');
-        cachedData = tenantCache!.get<List>(cacheKey);
+        cachedData = tenantCache!.get(cacheKey) as List?;
         print('🔍 DIAGNÓSTICO SALE_ORDER: Datos encontrados en tenantCache: ${cachedData != null}');
         if (cachedData != null) {
           print('🔍 DIAGNÓSTICO SALE_ORDER: Length: ${cachedData.length}');
@@ -270,10 +270,71 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         
         // Convertir cada record a Map<String, dynamic> para evitar errores de tipo
         final cachedRecords = cachedData.map((record) {
-          if (record is Map) {
-            return fromJson(Map<String, dynamic>.from(record));
-          } else {
-            throw Exception('Invalid record format in cache: ${record.runtimeType}');
+          try {
+            if (record is Map) {
+              // Limpiar el Map para asegurar tipos correctos
+              final cleanedRecord = <String, dynamic>{};
+              
+              for (final key in record.keys) {
+                final value = record[key];
+                
+                // Caso especial: order_line puede tener diferentes formatos
+                if (key == 'order_line') {
+                  if (value is List) {
+                    final ids = <int>[];
+                    for (final item in value) {
+                      if (item is int) {
+                        // Ya es un ID
+                        ids.add(item);
+                      } else if (item is List && item.length == 3 && item[0] == 0 && item[1] == 0) {
+                        // Es una tupla de Odoo: [0, 0, {id: 123, ...}]
+                        final data = item[2];
+                        if (data is Map && data.containsKey('id')) {
+                          final id = data['id'];
+                          if (id is int) {
+                            ids.add(id);
+                          }
+                        }
+                      } else if (item is Map) {
+                        // Es un registro completo: {id: 123, ...}
+                        final id = item['id'];
+                        if (id is int) {
+                          ids.add(id);
+                        }
+                      }
+                    }
+                    cleanedRecord[key] = ids;
+                  } else {
+                    cleanedRecord[key] = [];
+                  }
+                } else if (key == 'id') {
+                  // ID puede ser temporal (negativo) o real (positivo)
+                  cleanedRecord[key] = value;
+                } else if (value is List && value.isNotEmpty) {
+                  // Es un campo Many2one: [id, name]
+                  if (value.length == 2 && value[0] is num) {
+                    cleanedRecord[key] = value; // Mantener como List
+                  } else {
+                    cleanedRecord[key] = value;
+                  }
+                } else if (value is num) {
+                  cleanedRecord[key] = value;
+                } else if (value is String || value is bool || value == null) {
+                  cleanedRecord[key] = value;
+                } else {
+                  cleanedRecord[key] = value.toString();
+                }
+              }
+              
+              return fromJson(cleanedRecord);
+            } else {
+              throw Exception('Invalid record format in cache: ${record.runtimeType}');
+            }
+          } catch (e) {
+            print('⚠️ SALE_ORDER_REPO: Error parseando record: $e');
+            print('⚠️ SALE_ORDER_REPO: Record tipo: ${record.runtimeType}');
+            print('⚠️ SALE_ORDER_REPO: Record contenido: $record');
+            rethrow;
           }
         }).toList();
         
@@ -292,6 +353,128 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     }
   }
 
+  /// Guarda en cache local ANTES de enviar al servidor
+  Future<String> _saveToLocalCacheFirst(Map<String, dynamic> orderData) async {
+    try {
+      final tempId = DateTime.now().millisecondsSinceEpoch;
+      
+      // ✅ ENRIQUECER: Convertir campos Many2one de int a [id, name]
+      final enrichedOrderData = await _enrichMany2oneFieldsForCache(orderData);
+      
+      // ✅ GENERAR nombre temporal para órdenes offline
+      final tempOrderNumber = 'TEMPO-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+      
+      final tempOrder = Map<String, dynamic>.from(enrichedOrderData)
+        ..putIfAbsent('id', () => -tempId)  // ID temporal negativo
+        ..putIfAbsent('state', () => 'draft')  // Estado temporal
+        ..putIfAbsent('name', () => tempOrderNumber);  // ✅ Nombre temporal
+      
+      print('✅ SALE_ORDER: Datos enriquecidos para cache - Many2one fields convertidos');
+      print('✅ SALE_ORDER: Nombre temporal asignado: $tempOrderNumber');
+      
+      // Obtener cache actual
+      final cacheKey = 'sale_orders';
+      List<dynamic> cachedData = [];
+      
+      if (tenantCache != null) {
+        cachedData = tenantCache!.get(cacheKey, defaultValue: []) as List? ?? [];
+        print('💾 SALE_ORDER: Cache actual tiene ${cachedData.length} elementos');
+      } else {
+        cachedData = cache.get(cacheKey, defaultValue: []) as List<dynamic>? ?? [];
+        print('💾 SALE_ORDER: Cache normal tiene ${cachedData.length} elementos');
+      }
+      
+      // Agregar al inicio de la lista
+      cachedData.insert(0, tempOrder);
+      
+      // Guardar de vuelta en cache
+      if (tenantCache != null) {
+        await tenantCache!.put(cacheKey, cachedData);
+        print('💾 SALE_ORDER: Guardado en tenantCache');
+      } else {
+        await cache.put(cacheKey, cachedData);
+        print('💾 SALE_ORDER: Guardado en cache normal');
+      }
+      
+      print('✅ SALE_ORDER: Guardado localmente con ID temporal: -$tempId');
+      return tempId.toString();
+    } catch (e) {
+      print('⚠️ SALE_ORDER: Error guardando en cache local: $e');
+      // Retornar timestamp como fallback
+      return DateTime.now().millisecondsSinceEpoch.toString();
+    }
+  }
+  
+  /// ✅ NUEVO: Enriquece campos Many2one de int a [id, name] para cache
+  Future<Map<String, dynamic>> _enrichMany2oneFieldsForCache(Map<String, dynamic> orderData) async {
+    final enriched = Map<String, dynamic>.from(orderData);
+    
+    // Enriquecer partner_id
+    if (enriched.containsKey('partner_id') && enriched['partner_id'] is int) {
+      final partnerId = enriched['partner_id'] as int;
+      final partnerName = enriched['partner_name'] as String? ?? 'Unknown Partner';
+      enriched['partner_id'] = [partnerId, partnerName];
+      print('🔧 SALE_ORDER: Enriquecido partner_id: $partnerId → [$partnerId, $partnerName]');
+    }
+    
+    // Enriquecer partner_shipping_id
+    if (enriched.containsKey('partner_shipping_id') && enriched['partner_shipping_id'] is int) {
+      final shippingId = enriched['partner_shipping_id'] as int;
+      final shippingName = enriched['partner_shipping_name'] as String? ?? 'Unknown Address';
+      enriched['partner_shipping_id'] = [shippingId, shippingName];
+      print('🔧 SALE_ORDER: Enriquecido partner_shipping_id: $shippingId → [$shippingId, $shippingName]');
+    }
+    
+    // Enriquecer user_id
+    if (enriched.containsKey('user_id') && enriched['user_id'] is int) {
+      final userId = enriched['user_id'] as int;
+      enriched['user_id'] = [userId, 'User #$userId'];
+      print('🔧 SALE_ORDER: Enriquecido user_id: $userId → [$userId, User #$userId]');
+    }
+    
+    return enriched;
+  }
+
+  /// Actualiza ID temporal con ID real del servidor en cache
+  Future<void> _updateCacheWithRealId(String tempIdStr, int serverId) async {
+    try {
+      final tempId = -int.parse(tempIdStr);
+      
+      final cacheKey = 'sale_orders';
+      List<dynamic>? cachedData;
+      
+      if (tenantCache != null) {
+        cachedData = tenantCache!.get(cacheKey) as List?;
+      } else {
+        cachedData = cache.get(cacheKey) as List<dynamic>?;
+      }
+      
+      if (cachedData != null) {
+        final index = cachedData.indexWhere((o) => o is Map && o['id'] == tempId);
+        if (index >= 0) {
+          // Actualizar con ID real
+          final updatedOrder = Map<String, dynamic>.from(cachedData[index])
+            ..['id'] = serverId
+            ..['state'] = 'sent';
+          
+          cachedData[index] = updatedOrder;
+          
+          if (tenantCache != null) {
+            await tenantCache!.put(cacheKey, cachedData);
+          } else {
+            await cache.put(cacheKey, cachedData);
+          }
+          
+          print('✅ SALE_ORDER: Cache actualizado: temporal $tempId → real $serverId');
+        } else {
+          print('⚠️ SALE_ORDER: No se encontró orden temporal $tempId en cache');
+        }
+      }
+    } catch (e) {
+      print('⚠️ SALE_ORDER: Error actualizando cache: $e');
+    }
+  }
+
   /// Crea una nueva orden de venta (directamente en servidor cuando online)
   Future<String> createSaleOrder(Map<String, dynamic> orderData) async {
     try {
@@ -304,13 +487,24 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       
       print('🔵 REQUEST BODY CREATE SALE ORDER (final): $enrichedData');
 
-      // VERIFICAR CONECTIVIDAD: Crear directamente en servidor si estamos online
+      // PASO 1: SIEMPRE guardar primero en cache local
+      final tempId = await _saveToLocalCacheFirst(enrichedData);
+      print('💾 SALE_ORDER: Guardado local con ID temporal: $tempId');
+
+      // PASO 2: Si hay conectividad, intentar enviar al servidor
       if (await netConn.checkNetConn() == netConnState.online) {
         print('🌐 SALE_ORDER_REPO: ONLINE - Creando orden directamente en servidor');
         
+        // ✅ FILTRAR: Remover campos de enriquecimiento antes de enviar a Odoo
+        final cleanOrderData = Map<String, dynamic>.from(enrichedData)
+          ..remove('partner_name')
+          ..remove('partner_shipping_name');
+        
+        print('🧹 SALE_ORDER_REPO: Datos filtrados (removidos campos de enriquecimiento)');
+        print('🧹 SALE_ORDER_REPO: Datos que se enviarán: $cleanOrderData');
+        
         // Crear directamente en Odoo usando callKw
         print('🔥 SALE_ORDER_REPO: ===== INICIANDO CREACIÓN REAL =====');
-        print('🔥 SALE_ORDER_REPO: Datos que se enviarán: $enrichedData');
         print('🔥 SALE_ORDER_REPO: Modelo: $modelName');
         print('🔥 SALE_ORDER_REPO: Método: create');
         print('🔥 SALE_ORDER_REPO: Cliente HTTP: ${env.orpc.runtimeType}');
@@ -321,47 +515,46 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
           serverId = await env.orpc.callKw({
             'model': modelName,
             'method': 'create',
-            'args': [enrichedData],
+            'args': [cleanOrderData],  // ✅ Usar datos filtrados
             'kwargs': {},
           });
           
           print('🔥 SALE_ORDER_REPO: ===== RESPUESTA RECIBIDA =====');
           print('🔥 SALE_ORDER_REPO: Respuesta raw: $serverId');
           print('🔥 SALE_ORDER_REPO: Tipo de respuesta: ${serverId.runtimeType}');
-          print('🔥 SALE_ORDER_REPO: Es int: ${serverId is int}');
-          print('🔥 SALE_ORDER_REPO: Es String: ${serverId is String}');
-          print('🔥 SALE_ORDER_REPO: Es List: ${serverId is List}');
-          print('🔥 SALE_ORDER_REPO: Es Map: ${serverId is Map}');
+          
+          final serverIdStr = serverId.toString();
+          print('🔥 SALE_ORDER_REPO: ID convertido a string: $serverIdStr');
+          print('🔥 SALE_ORDER_REPO: ===== FIN CREACIÓN REAL =====');
+          
+          // PASO 3: Actualizar cache local con ID real
+          await _updateCacheWithRealId(tempId, serverId as int);
+          
+          print('✅ SALE_ORDER_REPO: Orden creada en servidor con ID: $serverIdStr');
+          print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER_SUCCESS', details: 'Server ID: $serverIdStr'));
+          
+          return serverIdStr;
         } catch (e) {
           print('❌ SALE_ORDER_REPO: Error en callKw (creación real): $e');
           print('❌ SALE_ORDER_REPO: Error tipo: ${e.runtimeType}');
-          // Re-lanzar para que el catch exterior lo maneje
-          rethrow;
+          print('⚠️ SALE_ORDER_REPO: Servidor falló, pero pedido ya está en cache local');
+          print('⚠️ SALE_ORDER_REPO: Pedido quedará con ID temporal y se sincronizará más tarde');
+          
+          // El pedido YA está en cache local con ID temporal
+          // No re-lanzar el error, retornar ID temporal
+          return tempId;
         }
-        
-        final serverIdStr = serverId.toString();
-        print('🔥 SALE_ORDER_REPO: ID convertido a string: $serverIdStr');
-        print('🔥 SALE_ORDER_REPO: ===== FIN CREACIÓN REAL =====');
-        
-        print('✅ SALE_ORDER_REPO: Orden creada en servidor con ID: $serverIdStr');
-        print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER_SUCCESS', details: 'Server ID: $serverIdStr'));
-        
-        return serverIdStr;
       } else {
         print('📱 SALE_ORDER_REPO: OFFLINE - Usando sistema offline');
-        print('📱 SALE_ORDER_REPO: Datos que se encolarán: $enrichedData');
-        print('📱 SALE_ORDER_REPO: Tiene partner_shipping_id: ${enrichedData.containsKey('partner_shipping_id')}');
-        if (enrichedData.containsKey('partner_shipping_id')) {
-          print('📱 SALE_ORDER_REPO: partner_shipping_id valor: ${enrichedData['partner_shipping_id']}');
-        }
         
-        // Solo usar offline cuando realmente no hay conexión
-        final localId = await _callQueue.createRecord(modelName, enrichedData);
+        // Encolar para sincronización posterior
+        await _callQueue.createRecord(modelName, enrichedData);
         
-        print('✅ SALE_ORDER_REPO: Orden creada offline con ID local: $localId');
-        print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER_SUCCESS', details: 'Local ID: $localId'));
+        print('✅ SALE_ORDER_REPO: Orden guardada localmente (ID temporal: $tempId)');
+        print('✅ SALE_ORDER_REPO: Orden encolada para sincronización');
+        print(AuditHelper.formatAuditLog('CREATE_SALE_ORDER_SUCCESS', details: 'Local ID: $tempId'));
         
-        return localId;
+        return tempId;
       }
     } catch (e) {
       print('❌ SALE_ORDER_REPO: Error creando orden: $e');
@@ -1060,6 +1253,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     final records = response as List<dynamic>;
     print('🔄 SALE_ORDER_REPO: ${records.length} registros incrementales obtenidos');
     
-    return records.cast<Map<String, dynamic>>();
+    // Convertir cada record a Map<String, dynamic> para evitar errores de tipo
+    return records.map((record) => Map<String, dynamic>.from(record)).toList();
   }
 }

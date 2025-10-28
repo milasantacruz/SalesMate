@@ -64,6 +64,16 @@ class _OfflineTestPageState extends State<OfflineTestPage> {
     print('OFFLINE_TEST: $message');
   }
 
+  void _addLog(String message) {
+    setState(() {
+      _logs.add('${DateTime.now().toString().substring(11, 19)}: $message');
+      if (_logs.length > 30) {
+        _logs.removeRange(0, _logs.length - 30);
+      }
+    });
+    print('OFFLINE_TEST: $message');
+  }
+
   Future<void> _loadPendingOperations() async {
     try {
       final operations = await _callQueue.getPendingOperations();
@@ -107,10 +117,25 @@ class _OfflineTestPageState extends State<OfflineTestPage> {
       final result = await _callQueue.syncPendingOperations();
       
       if (result.success) {
-        _updateStatus('✅ ${result.syncedOperations} operaciones sincronizadas');
+        _updateStatus('✅ ${result.syncedOperations} operaciones sincronizadas exitosamente');
         await _loadPendingOperations(); // Actualizar contador
       } else {
-        _updateStatus('⚠️ Sincronización parcial: ${result.message}');
+        // Mostrar detalles de errores
+        if (result.failedOperations > 0) {
+          _updateStatus('⚠️ ${result.syncedOperations} exitosas, ${result.failedOperations} fallidas');
+          
+          // Obtener operaciones pendientes para ver cuáles fallaron
+          final failedOps = await _callQueue.getPendingOperations();
+          for (final op in failedOps.take(3)) { // Mostrar máximo 3 errores
+            _addLog('❌ ${op.operation} ${op.model}: ${op.errorMessage ?? 'error desconocido'}');
+          }
+          
+          if (failedOps.length > 3) {
+            _addLog('... y ${failedOps.length - 3} más');
+          }
+        } else {
+          _updateStatus('⚠️ Sincronización: ${result.message}');
+        }
       }
       
       // PASO 2: Ejecutar incremental sync (traer cambios del servidor)
