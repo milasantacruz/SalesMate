@@ -35,8 +35,8 @@ android {
         
         minSdk = 21  // Android 5.0+
         targetSdk = 35  // Android 15
-        versionCode = 8
-        versionName = "1.0.7"
+        versionCode = 9
+        versionName = "1.0.8"
     }
 
     // ✅ Configuración de firma para release

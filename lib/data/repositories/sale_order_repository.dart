@@ -205,13 +205,65 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   /// Obtiene todos los registros del servidor
   Future<List<SaleOrder>> _getAllRecordsFromServer() async {
     try {
+      // ✅ PASO 1: Obtener órdenes básicas del servidor
       final result = await searchRead();
-      return result.map((record) => fromJson(record)).toList();
+      final basicOrders = result.map((record) => fromJson(record)).toList();
+      print('✅ SALE_ORDER_REPO: ${basicOrders.length} órdenes básicas obtenidas');
+      
+      // ✅ PASO 2: Enriquecer cada orden con sus líneas (en paralelo)
+      print('🔍 SALE_ORDER_REPO: Enriqueciendo órdenes con líneas...');
+      final enrichedOrders = await Future.wait(
+        basicOrders.map((order) => _enrichOrderWithLines(order)),
+      );
+      
+      final ordersWithLines = enrichedOrders.where((o) => o.orderLines.isNotEmpty).length;
+      print('✅ SALE_ORDER_REPO: $ordersWithLines/${enrichedOrders.length} órdenes enriquecidas con líneas');
+      
+      return enrichedOrders;
     } catch (e) {
       print('❌ SALE_ORDER_REPO: Error getting records from server: $e');
       // ✅ FIX: Lanzar error para que fetchRecords() lo capture y llame a loadRecords()
       rethrow;
     }
+  }
+
+  /// ✅ BUG-007: Enriquece una orden con sus líneas desde el servidor
+  Future<SaleOrder> _enrichOrderWithLines(SaleOrder order) async {
+    if (order.orderLineIds.isEmpty) {
+      return order;
+    }
+    
+    try {
+      final linesResult = await env.orpc.callKw({
+        'model': 'sale.order.line',
+        'method': 'read',
+        'args': [order.orderLineIds],
+        'kwargs': {
+          'fields': [
+            'id',
+            'product_id',
+            'name',
+            'product_uom_qty',
+            'price_unit',
+            'price_subtotal',
+            'tax_id'
+          ],
+        },
+      });
+      
+      if (linesResult is List) {
+        final orderLines = linesResult
+            .map((lineData) => SaleOrderLine.fromJson(lineData))
+            .toList();
+        print('✅ SALE_ORDER_REPO: Órden ${order.id} enriquecida con ${orderLines.length} líneas');
+        return order.copyWith(orderLines: orderLines);
+      }
+    } catch (e) {
+      print('⚠️ SALE_ORDER_REPO: Error enriqueciendo orden ${order.id}: $e');
+      // Fallback: retornar orden sin líneas en caso de error
+    }
+    
+    return order;
   }
 
   /// Aplica filtros locales a los registros
