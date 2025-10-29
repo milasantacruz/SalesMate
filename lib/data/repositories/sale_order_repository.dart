@@ -983,59 +983,145 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     try {
       print('🛒 SALE_ORDER_REPO: Obteniendo orden $orderId...');
       
-      final result = await env.orpc.callKw({
-        'model': modelName,
-        'method': 'read',
-        'args': [[orderId]],
-        'kwargs': {
-          'fields': oFields,
-        },
-      });
+      // ✅ PASO 1: Buscar en latestRecords (cache en memoria)
+      final cachedOrder = latestRecords.where((order) => order.id == orderId).firstOrNull;
       
-      if (result is List && result.isNotEmpty) {
-        var order = fromJson(result.first);
-        print('✅ SALE_ORDER_REPO: Orden $orderId obtenida, obteniendo líneas...');
+      if (cachedOrder != null) {
+        print('✅ SALE_ORDER_REPO: Orden $orderId encontrada en latestRecords (cache memoria)');
+        
+        // Si la orden en cache no tiene líneas, intentar obtenerlas del servidor (solo si hay conexión)
+        if (cachedOrder.orderLines.isEmpty && cachedOrder.orderLineIds.isNotEmpty) {
+          // Verificar si hay conexión antes de intentar obtener líneas del servidor
+          if (await netConn.checkNetConn() == netConnState.online) {
+            print('🔍 SALE_ORDER_REPO: Orden sin líneas en cache, obteniendo líneas del servidor (online)...');
+            try {
+              final linesResult = await env.orpc.callKw({
+                'model': 'sale.order.line',
+                'method': 'read',
+                'args': [cachedOrder.orderLineIds],
+                'kwargs': {
+                  'fields': [
+                    'id',
+                    'product_id',
+                    'name',
+                    'product_uom_qty',
+                    'price_unit',
+                    'price_subtotal',
+                    'tax_id'
+                  ],
+                },
+              });
 
-        // Ahora, obtén los detalles de las líneas de pedido
-        if (order.orderLineIds.isNotEmpty) {
-          final linesResult = await env.orpc.callKw({
-            'model': 'sale.order.line',
-            'method': 'read',
-            'args': [order.orderLineIds],
-            'kwargs': {
-              'fields': [
-                'id',
-                'product_id',
-                'name',
-                'product_uom_qty',
-                'price_unit',
-                'price_subtotal',
-                'tax_id'
-              ],
-            },
-          });
-
-          if (linesResult is List) {
-            print('🔍 SALE_ORDER_REPO: Raw lines data from Odoo: $linesResult');
-            final orderLines = linesResult
-                .map((lineData) {
-                  print('🔍 SALE_ORDER_REPO: Processing line data: $lineData');
-                  return SaleOrderLine.fromJson(lineData);
-                })
-                .toList();
-            order = order.copyWith(orderLines: orderLines);
-            print('✅ SALE_ORDER_REPO: ${orderLines.length} líneas obtenidas para orden $orderId');
+              if (linesResult is List) {
+                final orderLines = linesResult
+                    .map((lineData) => SaleOrderLine.fromJson(lineData))
+                    .toList();
+                print('✅ SALE_ORDER_REPO: ${orderLines.length} líneas obtenidas del servidor');
+                return cachedOrder.copyWith(orderLines: orderLines);
+              }
+            } catch (e) {
+              print('⚠️ SALE_ORDER_REPO: No se pudieron obtener líneas del servidor: $e');
+              // Retornar orden sin líneas en lugar de fallar completamente
+              return cachedOrder;
+            }
+          } else {
+            print('📱 SALE_ORDER_REPO: Modo offline - orden sin líneas en cache, retornando orden básica');
+            return cachedOrder;
           }
         }
         
-        return order;
+        // Si la orden ya tiene líneas en cache, retornarla directamente
+        return cachedOrder;
       }
       
-      print('⚠️ SALE_ORDER_REPO: Orden $orderId no encontrada');
-      return null;
+      // ✅ PASO 2: Si no está en latestRecords, cargar desde Hive (TenantAwareCache)
+      print('🔍 SALE_ORDER_REPO: Orden no en latestRecords, buscando en cache persistente...');
+      await loadRecords(); // Esto actualiza latestRecords desde TenantAwareCache
+      
+      // Intentar otra vez después de cargar desde Hive
+      final reloadedOrder = latestRecords.where((order) => order.id == orderId).firstOrNull;
+      if (reloadedOrder != null) {
+        print('✅ SALE_ORDER_REPO: Orden $orderId encontrada después de cargar desde cache persistente');
+        return reloadedOrder;
+      }
+      
+      // ✅ PASO 3: Intentar desde servidor (solo si hay conexión)
+      if (await netConn.checkNetConn() == netConnState.online) {
+        print('🌐 SALE_ORDER_REPO: Intento desde servidor...');
+        
+        final result = await env.orpc.callKw({
+          'model': modelName,
+          'method': 'read',
+          'args': [[orderId]],
+          'kwargs': {
+            'fields': oFields,
+          },
+        });
+        
+        if (result is List && result.isNotEmpty) {
+          var order = fromJson(result.first);
+          print('✅ SALE_ORDER_REPO: Orden $orderId obtenida del servidor, obteniendo líneas...');
+
+          // Ahora, obtén los detalles de las líneas de pedido
+          if (order.orderLineIds.isNotEmpty) {
+            final linesResult = await env.orpc.callKw({
+              'model': 'sale.order.line',
+              'method': 'read',
+              'args': [order.orderLineIds],
+              'kwargs': {
+                'fields': [
+                  'id',
+                  'product_id',
+                  'name',
+                  'product_uom_qty',
+                  'price_unit',
+                  'price_subtotal',
+                  'tax_id'
+                ],
+              },
+            });
+
+            if (linesResult is List) {
+              print('🔍 SALE_ORDER_REPO: Raw lines data from Odoo: $linesResult');
+              final orderLines = linesResult
+                  .map((lineData) {
+                    print('🔍 SALE_ORDER_REPO: Processing line data: $lineData');
+                    return SaleOrderLine.fromJson(lineData);
+                  })
+                  .toList();
+              order = order.copyWith(orderLines: orderLines);
+              print('✅ SALE_ORDER_REPO: ${orderLines.length} líneas obtenidas para orden $orderId');
+            }
+          }
+          
+          return order;
+        }
+        
+        print('⚠️ SALE_ORDER_REPO: Orden $orderId no encontrada en servidor');
+        return null;
+      } else {
+        print('📱 SALE_ORDER_REPO: Modo offline y orden $orderId no en cache');
+        return null;
+      }
       
     } catch (e) {
       print('❌ SALE_ORDER_REPO: Error obteniendo orden $orderId: $e');
+      
+      // ✅ FALLBACK: Intentar cache si falló servidor
+      print('🔄 SALE_ORDER_REPO: Intentando cargar desde cache persistente (fallback)...');
+      try {
+        await loadRecords(); // Cargar desde TenantAwareCache a latestRecords
+        
+        final cachedOrder = latestRecords.where((order) => order.id == orderId).firstOrNull;
+        if (cachedOrder != null) {
+          print('✅ SALE_ORDER_REPO: Orden $orderId recuperada de cache (fallback)');
+          return cachedOrder;
+        }
+      } catch (cacheError) {
+        print('❌ SALE_ORDER_REPO: Error en fallback de cache: $cacheError');
+      }
+      
+      print('❌ SALE_ORDER_REPO: Orden $orderId no encontrada en cache ni en servidor');
       return null;
     }
   }
