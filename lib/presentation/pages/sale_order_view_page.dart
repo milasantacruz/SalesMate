@@ -1018,9 +1018,18 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     );
 
     if (newAddress != null) {
+      // ✅ Recargar direcciones desde cache para incluir la nueva dirección guardada
+      if (_currentOrder?.partnerId != null) {
+        await _loadDeliveryAddresses(_currentOrder!.partnerId!);
+      }
+      
       setState(() {
-        _deliveryAddresses.add(newAddress);
+        // Asegurar que la nueva dirección está seleccionada
         _selectedShippingAddress = newAddress;
+        // Si no apareció en la lista recargada, agregarla manualmente
+        if (!_deliveryAddresses.any((addr) => addr.id == newAddress.id)) {
+          _deliveryAddresses.add(newAddress);
+        }
       });
       
       if (mounted) {

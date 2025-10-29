@@ -291,34 +291,20 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     try {
       print('📱 SALE_ORDER_REPO: Loading records from cache...');
       
-      // 🔍 DIAGNÓSTICO: Verificar qué cache se está usando
-      print('🔍 DIAGNÓSTICO SALE_ORDER: tenantCache != null: ${tenantCache != null}');
-      
       // Intentar primero con tenantCache
       final cacheKey = 'sale_orders';
       List<dynamic>? cachedData;
       
       if (tenantCache != null) {
-        print('🔍 DIAGNÓSTICO SALE_ORDER: Buscando en tenantCache con key: "$cacheKey"');
         cachedData = tenantCache!.get(cacheKey) as List?;
-        print('🔍 DIAGNÓSTICO SALE_ORDER: Datos encontrados en tenantCache: ${cachedData != null}');
-        if (cachedData != null) {
-          print('🔍 DIAGNÓSTICO SALE_ORDER: Length: ${cachedData.length}');
-        }
-      } else {
-        print('🔍 DIAGNÓSTICO SALE_ORDER: tenantCache es null, usando cache normal');
       }
       
       // Si no se encontró en tenantCache, intentar con cache normal
       if (cachedData == null) {
-        print('🔍 DIAGNÓSTICO SALE_ORDER: Intentando con cache normal...');
         cachedData = cache.get(cacheKey) as List<dynamic>?;
-        print('🔍 DIAGNÓSTICO SALE_ORDER: Datos encontrados en cache normal: ${cachedData != null}');
       }
       
       if (cachedData != null) {
-        print('🔍 DIAGNÓSTICO SALE_ORDER: cachedData != null, tipo: ${cachedData.runtimeType}');
-        print('🔍 DIAGNÓSTICO SALE_ORDER: Cantidad elementos: ${cachedData.length}');
         
         // Convertir cada record a Map<String, dynamic> para evitar errores de tipo
         final cachedRecords = cachedData.map((record) {
@@ -390,17 +376,14 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
           }
         }).toList();
         
-        print('🔍 DIAGNÓSTICO SALE_ORDER: Registros convertidos: ${cachedRecords.length}');
         latestRecords = _applyLocalFilters(cachedRecords);
         print('✅ SALE_ORDER_REPO: ${latestRecords.length} records loaded from cache');
       } else {
         latestRecords = [];
         print('⚠️ SALE_ORDER_REPO: No cached data found');
-        print('🔍 DIAGNÓSTICO SALE_ORDER: TANTO tenantCache como cache normal retornaron NULL');
       }
     } catch (e) {
       print('❌ SALE_ORDER_REPO: Error loading from cache: $e');
-      print('🔍 DIAGNÓSTICO SALE_ORDER: Error tipo: ${e.runtimeType}');
       latestRecords = [];
     }
   }

@@ -44,7 +44,7 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
           'context': {'bin_size': true},
           'domain': oDomain,
           'fields': oFields,
-          'limit': 80,
+         // 'limit': 80,
           'offset': 0,
           'order': 'name'
         },
@@ -208,14 +208,18 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
       };
       
       print('📋 PARTNER_REPO: Datos finales para crear: $finalData');
-      
+
+      // ✅ Local-first: Guardar primero en cache con ID temporal
+      final tempIdStr = await _saveAddressToLocalCacheFirst(finalData);
+      print('💾 PARTNER/DELIVERY: Guardado local con ID temporal: $tempIdStr');
+
       // Verificar si estamos offline antes de intentar llamar
       if (connectivity != netConnState.online) {
         print('📴 PARTNER_REPO: Modo OFFLINE detectado - creando objeto temporal y encolando');
         print('⚠️ PARTNER_REPO: NO se llamará a env.orpc.callKw()');
         
         // Generar ID temporal negativo
-        final tempId = DateTime.now().millisecondsSinceEpoch;
+        final tempId = int.tryParse(tempIdStr) ?? DateTime.now().millisecondsSinceEpoch;
         final newAddressId = -tempId;
         
         print('📴 PARTNER_REPO: ID temporal asignado: $newAddressId');
@@ -270,6 +274,9 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
       
       final newId = response as int;
       print('✅ PARTNER_REPO: Dirección creada con ID: $newId');
+
+      // ✅ Actualizar cache reemplazando ID temporal con ID real
+      await _updateAddressCacheWithRealId(tempIdStr, newId);
       
       // Leer la dirección recién creada
       final readResponse = await env.orpc.callKw({
@@ -360,6 +367,104 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
   /// Elimina permanentemente un partner (offline/online según conectividad)
   Future<void> deletePartner(int id) async {
     await _callQueue.deleteRecord(modelName, id);
+  }
+}
+
+extension PartnerRepositoryLocalFirst on PartnerRepository {
+  /// Guarda dirección en cache con ID temporal negativo y la inserta al inicio
+  Future<String> _saveAddressToLocalCacheFirst(Map<String, dynamic> addressData) async {
+    try {
+      final tempId = DateTime.now().millisecondsSinceEpoch;
+      final tempAddress = Map<String, dynamic>.from(addressData)
+        ..putIfAbsent('id', () => -tempId)
+        ..putIfAbsent('type', () => 'delivery')
+        ..putIfAbsent('active', () => true);
+      
+      // ✅ CRÍTICO: Asegurar que commercial_partner_id está presente para el filtrado
+      // Si no está, usar parent_id (que debería ser el mismo para direcciones de envío)
+      if (!tempAddress.containsKey('commercial_partner_id') && tempAddress.containsKey('parent_id')) {
+        final parentId = tempAddress['parent_id'];
+        int? partnerId;
+        
+        // Extraer el ID del parent (puede ser int o List [id, name])
+        if (parentId is int) {
+          partnerId = parentId;
+        } else if (parentId is List && parentId.isNotEmpty) {
+          partnerId = (parentId[0] as num?)?.toInt();
+        }
+        
+        // Establecer commercial_partner_id en el mismo formato que parent_id
+        if (partnerId != null) {
+          if (parentId is List) {
+            // Mantener formato [id, name] si parent_id lo tiene
+            tempAddress['commercial_partner_id'] = parentId;
+          } else {
+            // O solo el ID si es int
+            tempAddress['commercial_partner_id'] = partnerId;
+          }
+          print('🔧 PARTNER/DELIVERY: commercial_partner_id establecido desde parent_id: $partnerId');
+        }
+      }
+
+      const cacheKey = 'ShippingAddress_records';
+      List<dynamic> cachedData = [];
+
+      if (tenantCache != null) {
+        cachedData = tenantCache!.get(cacheKey, defaultValue: []) as List? ?? [];
+      } else {
+        cachedData = cache.get(cacheKey, defaultValue: []) as List<dynamic>? ?? [];
+      }
+
+      cachedData.insert(0, tempAddress);
+
+      if (tenantCache != null) {
+        await tenantCache!.put(cacheKey, cachedData);
+      } else {
+        await cache.put(cacheKey, cachedData);
+      }
+
+      print('✅ PARTNER/DELIVERY: Cache local actualizado con dirección temporal -$tempId');
+      return tempId.toString();
+    } catch (e) {
+      print('⚠️ PARTNER/DELIVERY: Error guardando en cache local: $e');
+      return DateTime.now().millisecondsSinceEpoch.toString();
+    }
+  }
+
+  /// Reemplaza el ID temporal por el ID real en cache tras creación en servidor
+  Future<void> _updateAddressCacheWithRealId(String tempIdStr, int serverId) async {
+    try {
+      final tempId = -int.parse(tempIdStr);
+      const cacheKey = 'ShippingAddress_records';
+      List<dynamic>? cachedData;
+
+      if (tenantCache != null) {
+        cachedData = tenantCache!.get(cacheKey) as List?;
+      } else {
+        cachedData = cache.get(cacheKey) as List<dynamic>?;
+      }
+
+      if (cachedData != null) {
+        final index = cachedData.indexWhere((a) => a is Map && a['id'] == tempId);
+        if (index >= 0) {
+          final updated = Map<String, dynamic>.from(cachedData[index])
+            ..['id'] = serverId;
+          cachedData[index] = updated;
+
+          if (tenantCache != null) {
+            await tenantCache!.put(cacheKey, cachedData);
+          } else {
+            await cache.put(cacheKey, cachedData);
+          }
+
+          print('✅ PARTNER/DELIVERY: Cache actualizado: temporal $tempId → real $serverId');
+        } else {
+          print('⚠️ PARTNER/DELIVERY: Dirección temporal $tempId no encontrada en cache');
+        }
+      }
+    } catch (e) {
+      print('⚠️ PARTNER/DELIVERY: Error actualizando cache con ID real: $e');
+    }
   }
 }
 

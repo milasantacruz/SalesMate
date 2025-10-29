@@ -4,6 +4,7 @@ import '../../core/di/injection_container.dart';
 import '../../data/repositories/odoo_call_queue_repository.dart';
 import '../../core/sync/incremental_sync_coordinator.dart';
 import '../../core/network/network_connectivity.dart';
+import '../../core/tenant/tenant_aware_cache.dart';
 
 class OfflineTestPage extends StatefulWidget {
   const OfflineTestPage({super.key});
@@ -21,6 +22,7 @@ class _OfflineTestPageState extends State<OfflineTestPage> {
   int _pendingOperationsCount = 0;
   bool _isSyncing = false;
   bool _hasConnectivity = false;
+  List<Map<String, dynamic>> _syncErrors = [];
 
   @override
   void initState() {
@@ -94,6 +96,28 @@ class _OfflineTestPageState extends State<OfflineTestPage> {
     }
   }
 
+  /// ✅ INCREMENTO 1: Carga errores de sincronización desde cache
+  Future<List<Map<String, dynamic>>> _loadSyncErrors() async {
+    try {
+      final tenantCache = getIt<TenantAwareCache>();
+      final logs = tenantCache.get('sync_error_logs', defaultValue: []) as List? ?? [];
+      
+      // Convertir a List<Map> y limitar a últimos 10 para mostrar
+      final errorList = logs
+          .where((log) => log is Map)
+          .map((log) => Map<String, dynamic>.from(log as Map))
+          .toList();
+      
+      // Retornar últimos 10 más recientes
+      return errorList.length > 10 
+          ? errorList.sublist(errorList.length - 10)
+          : errorList;
+    } catch (e) {
+      print('⚠️ OFFLINE_TEST: Error cargando logs de errores: $e');
+      return [];
+    }
+  }
+
   Future<void> _testSync() async {
     if (_isSyncing) {
       _updateStatus('⏳ Sincronización en progreso...');
@@ -162,6 +186,22 @@ class _OfflineTestPageState extends State<OfflineTestPage> {
       // Actualizar conectividad después de sync
       await _checkConnectivity();
       
+      // ✅ INCREMENTO 1: Cargar errores de sincronización
+      final errors = await _loadSyncErrors();
+      setState(() {
+        _syncErrors = errors;
+      });
+      
+      if (errors.isNotEmpty) {
+        _addLog('📋 Se encontraron ${errors.length} errores de sincronización');
+        for (final error in errors) {
+          final timestamp = error['timestamp']?.toString() ?? '';
+          final timeStr = timestamp.length > 16 ? timestamp.substring(11, 19) : '';
+          final msg = '$timeStr ❌ ${error['model']} ${error['operation']}: ${error['error']}';
+          _addLog(msg);
+        }
+      }
+      
     } catch (e) {
       _updateStatus('❌ Error durante sincronización: $e');
     } finally {
@@ -201,6 +241,11 @@ class _OfflineTestPageState extends State<OfflineTestPage> {
               
               // Operaciones pendientes
               _buildPendingOperationsCard(context),
+              
+              const SizedBox(height: 16),
+              
+              // ✅ INCREMENTO 1: Errores de sincronización
+              _buildSyncErrorsCard(context),
               
               const SizedBox(height: 16),
               
@@ -317,6 +362,146 @@ class _OfflineTestPageState extends State<OfflineTestPage> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// ✅ INCREMENTO 1: Card para mostrar errores de sincronización
+  Widget _buildSyncErrorsCard(BuildContext context) {
+    if (_syncErrors.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    return Card(
+      color: Colors.red.shade50,
+      margin: const EdgeInsets.only(bottom: 0),
+      child: ExpansionTile(
+        leading: const Icon(Icons.error, color: Colors.red),
+        title: Text(
+          'Errores de Sincronización (${_syncErrors.length})',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.red,
+          ),
+        ),
+        subtitle: const Text(
+          'Toca para ver detalles',
+          style: TextStyle(fontSize: 12),
+        ),
+        children: _syncErrors.map((error) {
+          final timestamp = error['timestamp']?.toString() ?? '';
+          final timeStr = timestamp.length > 16 
+              ? timestamp.substring(11, 19) 
+              : timestamp.length > 10 
+                  ? timestamp.substring(0, 10)
+                  : timestamp;
+          
+          // Extraer código y name del error
+          String errorCode = 'N/A';
+          String errorName = 'N/A';
+          
+          final errorMessage = error['error']?.toString() ?? '';
+          
+          // Intentar extraer código y name del formato OdooException
+          if (errorMessage.contains('code:')) {
+            final codeMatch = RegExp(r'code:\s*(\d+)').firstMatch(errorMessage);
+            if (codeMatch != null) {
+              errorCode = codeMatch.group(1) ?? 'N/A';
+            }
+          }
+          
+          if (errorMessage.contains('name:')) {
+            final nameMatch = RegExp(r'name:\s*([^,}]+)').firstMatch(errorMessage);
+            if (nameMatch != null) {
+              errorName = nameMatch.group(1)?.trim() ?? 'N/A';
+            }
+          }
+          
+          // Si no se encuentra en formato estándar, buscar alternativas
+          if (errorCode == 'N/A' && errorMessage.contains('code')) {
+            final codeMatch = RegExp(r'code["\s:]*(\d+)').firstMatch(errorMessage);
+            if (codeMatch != null) {
+              errorCode = codeMatch.group(1) ?? 'N/A';
+            }
+          }
+          
+          if (errorName == 'N/A' && errorMessage.contains('name')) {
+            final nameMatch = RegExp(r'name["\s:]*([^,}]+)').firstMatch(errorMessage);
+            if (nameMatch != null) {
+              errorName = nameMatch.group(1)?.trim() ?? 'N/A';
+            }
+          }
+          
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.red.shade200, width: 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.warning_amber, 
+                         size: 16, 
+                         color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${error['model']} - ${error['operation']}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      timeStr,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'código: $errorCode',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black87,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'name: $errorName',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black87,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }

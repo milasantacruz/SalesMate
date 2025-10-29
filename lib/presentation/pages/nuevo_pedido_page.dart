@@ -731,9 +731,19 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
 
     if (newAddress != null) {
       print('✅ NUEVO_PEDIDO: Dirección creada: ${newAddress.name} (ID: ${newAddress.id})');
+      
+      // ✅ Recargar direcciones desde cache para incluir la nueva dirección guardada
+      if (_selectedPartner != null) {
+        await _loadDeliveryAddresses(_selectedPartner!.id);
+      }
+      
       setState(() {
-        _deliveryAddresses.add(newAddress);
+        // Asegurar que la nueva dirección está seleccionada
         _selectedShippingAddress = newAddress;
+        // Si no apareció en la lista recargada, agregarla manualmente
+        if (!_deliveryAddresses.any((addr) => addr.id == newAddress.id)) {
+          _deliveryAddresses.add(newAddress);
+        }
         print('✅ NUEVO_PEDIDO: _selectedShippingAddress establecido a ${newAddress.id}');
       });
       

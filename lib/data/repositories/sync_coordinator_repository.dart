@@ -282,16 +282,19 @@ class SyncCoordinatorRepository {
         if (operation.model == 'sale.order') {
           await _updateSaleOrderCache(tempId, result, createData);
         } else if (operation.model == 'res.partner') {
-          await _updateAddressCache(result);
+          // ✅ INCREMENTO 2: Actualizar cache usando tempId si existe
+          await _updateAddressCache(result, tempId: tempId);
         }
         
         return true;
       } else {
         print('❌ SYNC_COORDINATOR: Error creando registro - resultado inválido: $result');
+        await _logSyncError(operation, 'Resultado inválido: $result');
         return false;
       }
     } catch (e) {
       print('❌ SYNC_COORDINATOR: Error en creación: $e');
+      await _logSyncError(operation, e);
       return false;
     }
   }
@@ -330,10 +333,11 @@ class SyncCoordinatorRepository {
     }
   }
   
-  /// Actualiza el cache local con una dirección recién creada
-  Future<void> _updateAddressCache(int addressId) async {
+  /// ✅ INCREMENTO 2: Actualiza el cache local con una dirección recién creada
+  /// Si hay tempId, reemplaza el ID temporal con el real
+  Future<void> _updateAddressCache(int addressId, {int? tempId}) async {
     try {
-      print('🔄 SYNC_COORDINATOR: Actualizando cache local con dirección $addressId');
+      print('🔄 SYNC_COORDINATOR: Actualizando cache local con dirección $addressId${tempId != null ? " (tempId: $tempId)" : ""}');
       
       // Leer la dirección recién creada del servidor
       final readResponse = await _odooClient.callKw({
@@ -357,17 +361,31 @@ class SyncCoordinatorRepository {
             ? List<Map<String, dynamic>>.from((cachedData as List).map((e) => Map<String, dynamic>.from(e as Map)))
             : [];
         
-        // Verificar si la dirección ya existe en el cache
-        final existingIndex = currentAddresses.indexWhere((a) => a['id'] == addressId);
-        
-        if (existingIndex >= 0) {
-          // Actualizar dirección existente
-          currentAddresses[existingIndex] = addressJson;
-          print('🔄 SYNC_COORDINATOR: Dirección $addressId actualizada en cache');
+        // ✅ INCREMENTO 2: Si hay tempId, buscar y reemplazar ID temporal
+        if (tempId != null && tempId < 0) {
+          final tempIndex = currentAddresses.indexWhere((a) => a['id'] == tempId);
+          if (tempIndex >= 0) {
+            // Reemplazar dirección temporal con la real
+            currentAddresses[tempIndex] = addressJson;
+            print('✅ SYNC_COORDINATOR: Dirección temporal $tempId reemplazada con ID real $addressId');
+          } else {
+            // No se encontró temporal, agregar como nueva
+            currentAddresses.add(addressJson);
+            print('⚠️ SYNC_COORDINATOR: No se encontró dirección temporal $tempId, agregando como nueva');
+          }
         } else {
-          // Agregar nueva dirección
-          currentAddresses.add(addressJson);
-          print('✅ SYNC_COORDINATOR: Dirección $addressId agregada al cache');
+          // Sin tempId: verificar si la dirección ya existe en el cache
+          final existingIndex = currentAddresses.indexWhere((a) => a['id'] == addressId);
+          
+          if (existingIndex >= 0) {
+            // Actualizar dirección existente
+            currentAddresses[existingIndex] = addressJson;
+            print('🔄 SYNC_COORDINATOR: Dirección $addressId actualizada en cache');
+          } else {
+            // Agregar nueva dirección
+            currentAddresses.add(addressJson);
+            print('✅ SYNC_COORDINATOR: Dirección $addressId agregada al cache');
+          }
         }
         
         // Guardar cache actualizado
@@ -376,6 +394,40 @@ class SyncCoordinatorRepository {
       }
     } catch (e) {
       print('⚠️ SYNC_COORDINATOR: Error actualizando cache de dirección: $e');
+    }
+  }
+
+  /// ✅ INCREMENTO 1: Registra errores de sincronización en cache para debugging
+  Future<void> _logSyncError(PendingOperation operation, dynamic error) async {
+    try {
+      final logEntry = {
+        'timestamp': DateTime.now().toIso8601String(),
+        'model': operation.model,
+        'operation': operation.operation,
+        'error': error.toString(),
+        'data': operation.data.toString().length > 200 
+            ? operation.data.toString().substring(0, 200) + '...'
+            : operation.data.toString(),
+      };
+      
+      // Obtener logs actuales desde tenantCache
+      final cacheKey = 'sync_error_logs';
+      List<dynamic> logs = _tenantCache.get(cacheKey, defaultValue: []) as List? ?? [];
+      
+      // Agregar nuevo error
+      logs.add(logEntry);
+      
+      // Mantener solo últimos 50
+      if (logs.length > 50) {
+        logs.removeAt(0);
+      }
+      
+      // Guardar en cache
+      await _tenantCache.put(cacheKey, logs);
+      
+      print('❌ SYNC_ERROR: ${operation.model} ${operation.operation} - $error');
+    } catch (e) {
+      print('⚠️ SYNC_COORDINATOR: Error guardando log de error: $e');
     }
   }
 
@@ -404,10 +456,12 @@ class SyncCoordinatorRepository {
         return true;
       } else {
         print('❌ SYNC_COORDINATOR: Error actualizando registro - resultado inválido: $result');
+        await _logSyncError(operation, 'Resultado inválido: $result');
         return false;
       }
     } catch (e) {
       print('❌ SYNC_COORDINATOR: Error en actualización: $e');
+      await _logSyncError(operation, e);
       return false;
     }
   }
@@ -433,10 +487,12 @@ class SyncCoordinatorRepository {
         return true;
       } else {
         print('❌ SYNC_COORDINATOR: Error eliminando registro - resultado inválido: $result');
+        await _logSyncError(operation, 'Resultado inválido: $result');
         return false;
       }
     } catch (e) {
       print('❌ SYNC_COORDINATOR: Error en eliminación: $e');
+      await _logSyncError(operation, e);
       return false;
     }
   }
