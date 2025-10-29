@@ -35,6 +35,8 @@ class CreateSaleOrderRequest extends Equatable {
       'state': state,
       'order_line':
           orderLines.map((line) => [0, 0, line.toCreateJson()]).toList(),
+      // ✅ Para cache offline: incluir representación completa de líneas
+      'order_lines': orderLines.map((line) => line.toJson()).toList(),
     };
     
     // Solo agregar partner_shipping_id si existe

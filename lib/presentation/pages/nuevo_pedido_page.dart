@@ -1109,6 +1109,8 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
           'price_unit': line.priceUnit,
         }
       ]).toList(),
+      // ✅ Para cache offline: incluir también formato completo consumido por el modelo
+      'order_lines': _orderLines.map((line) => line.toJson()).toList(),
     };
 
     // Si hay dirección de despacho seleccionada, agregarla

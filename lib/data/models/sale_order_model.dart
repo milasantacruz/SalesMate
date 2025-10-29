@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'dart:convert';
 import 'package:odoo_repository/odoo_repository.dart';
 import 'package:odoo_sales_app/data/models/sale_order_line_model.dart';
 
@@ -133,7 +134,7 @@ class SaleOrder extends Equatable implements OdooRecord {
 
   /// Convierte SaleOrder a JSON
   Map<String, dynamic> toJson() {
-    return {
+    final json = {
       'id': id,
       'name': name,
       'partner_id': partnerId != null ? [partnerId, partnerName] : false,
@@ -151,6 +152,12 @@ class SaleOrder extends Equatable implements OdooRecord {
       'write_uid': writeUid,
       'write_date': writeDate,
     };
+    try {
+      if (orderLines.isNotEmpty) {
+        print('DIAG_BUG_008 SaleOrder.toJson(): id=$id, order_lines=${orderLines.length}');
+      }
+    } catch (_) {}
+    return json;
   }
 
   SaleOrder copyWith({
@@ -264,16 +271,37 @@ List<SaleOrderLine> _parseOrderLinesFromJson(Map<String, dynamic> json) {
     // Si es String (serializado incorrectamente), intentar parsear
     if (orderLinesRaw is String) {
       print('⚠️ SALE_ORDER_MODEL: order_lines es String, intentando parsear...');
-      return const []; // Por ahora retornar vacío
+      try {
+        final decoded = jsonDecode(orderLinesRaw);
+        if (decoded is List) {
+          final linesFromString = decoded
+              .map((line) {
+                try {
+                  if (line is Map) {
+                    return SaleOrderLine.fromJson(Map<String, dynamic>.from(line));
+                  }
+                  return null;
+                } catch (e) {
+                  print('⚠️ SALE_ORDER_MODEL: Error parseando línea (string->json): $e');
+                  return null;
+                }
+              })
+              .whereType<SaleOrderLine>()
+              .toList();
+          print('DIAG_BUG_008 SaleOrder.fromJson(): id=${json['id']}, parsed(order_lines as String)=${linesFromString.length}');
+          return linesFromString;
+        }
+      } catch (_) {}
+      return const [];
     }
 
     // Si es List, procesar
     if (orderLinesRaw is List) {
-      return orderLinesRaw
+      final lines = orderLinesRaw
           .map((line) {
             try {
               if (line is Map) {
-                return SaleOrderLine.fromJson(line as Map<String, dynamic>);
+                return SaleOrderLine.fromJson(Map<String, dynamic>.from(line));
               }
               return null;
             } catch (e) {
@@ -283,6 +311,10 @@ List<SaleOrderLine> _parseOrderLinesFromJson(Map<String, dynamic> json) {
           })
           .whereType<SaleOrderLine>()
           .toList();
+      try {
+        print('DIAG_BUG_008 SaleOrder.fromJson(): id=${json['id']}, parsed order_lines=${lines.length}');
+      } catch (_) {}
+      return lines;
     }
 
     return const [];
