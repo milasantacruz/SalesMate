@@ -115,7 +115,8 @@ class SaleOrder extends Equatable implements OdooRecord {
               ?.map((id) => id as int)
               .toList() ??
           [],
-      orderLines: const [],
+      // ✅ BUG-007: Cargar orderLines desde JSON si están disponibles
+      orderLines: _parseOrderLinesFromJson(json),
       // Campos de auditoría
       userId: parseMany2oneId(json['user_id']),
       userName: parseMany2oneName(json['user_id']),
@@ -141,6 +142,8 @@ class SaleOrder extends Equatable implements OdooRecord {
       'amount_total': amountTotal,
       'state': state,
       'order_line': orderLineIds,
+      // ✅ BUG-007: Incluir orderLines en JSON para cache offline
+      'order_lines': orderLines.map((line) => line.toJson()).toList(),
       // Campos de auditoría
       'user_id': userId != null ? [userId, userName] : false,
       'create_uid': createUid,
@@ -246,6 +249,47 @@ class SaleOrder extends Equatable implements OdooRecord {
         writeUserName,
         writeDate,
       ];
+}
+
+/// ✅ BUG-007: Helper para parsear orderLines de forma robusta
+List<SaleOrderLine> _parseOrderLinesFromJson(Map<String, dynamic> json) {
+  try {
+    // Verificar si existe order_lines
+    if (!json.containsKey('order_lines')) {
+      return const [];
+    }
+
+    final orderLinesRaw = json['order_lines'];
+
+    // Si es String (serializado incorrectamente), intentar parsear
+    if (orderLinesRaw is String) {
+      print('⚠️ SALE_ORDER_MODEL: order_lines es String, intentando parsear...');
+      return const []; // Por ahora retornar vacío
+    }
+
+    // Si es List, procesar
+    if (orderLinesRaw is List) {
+      return orderLinesRaw
+          .map((line) {
+            try {
+              if (line is Map) {
+                return SaleOrderLine.fromJson(line as Map<String, dynamic>);
+              }
+              return null;
+            } catch (e) {
+              print('⚠️ SALE_ORDER_MODEL: Error parseando línea: $e');
+              return null;
+            }
+          })
+          .whereType<SaleOrderLine>()
+          .toList();
+    }
+
+    return const [];
+  } catch (e) {
+    print('⚠️ SALE_ORDER_MODEL: Error parseando orderLines: $e');
+    return const [];
+  }
 }
 
 

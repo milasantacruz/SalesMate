@@ -475,6 +475,40 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     }
   }
 
+  /// ✅ BUG-007: Actualiza cache con orden completa (incluyendo líneas)
+  Future<void> _updateCacheWithCompleteOrder(SaleOrder completeOrder) async {
+    try {
+      final cacheKey = 'sale_orders';
+      List<dynamic>? cachedData;
+      
+      if (tenantCache != null) {
+        cachedData = tenantCache!.get(cacheKey) as List?;
+      } else {
+        cachedData = cache.get(cacheKey) as List<dynamic>?;
+      }
+      
+      if (cachedData != null) {
+        final index = cachedData.indexWhere((o) => o is Map && o['id'] == completeOrder.id);
+        if (index >= 0) {
+          // Actualizar con orden completa (incluye líneas)
+          cachedData[index] = completeOrder.toJson();
+          
+          if (tenantCache != null) {
+            await tenantCache!.put(cacheKey, cachedData);
+          } else {
+            await cache.put(cacheKey, cachedData);
+          }
+          
+          print('✅ SALE_ORDER: Cache actualizado con líneas completas para orden ${completeOrder.id}');
+        } else {
+          print('⚠️ SALE_ORDER: No se encontró orden ${completeOrder.id} en cache');
+        }
+      }
+    } catch (e) {
+      print('⚠️ SALE_ORDER: Error actualizando cache con líneas: $e');
+    }
+  }
+
   /// Crea una nueva orden de venta (directamente en servidor cuando online)
   Future<String> createSaleOrder(Map<String, dynamic> orderData) async {
     try {
@@ -1017,7 +1051,19 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
                     .map((lineData) => SaleOrderLine.fromJson(lineData))
                     .toList();
                 print('✅ SALE_ORDER_REPO: ${orderLines.length} líneas obtenidas del servidor');
-                return cachedOrder.copyWith(orderLines: orderLines);
+                
+                // ✅ BUG-007: Actualizar cache con orden completa (con líneas)
+                final completeOrder = cachedOrder.copyWith(orderLines: orderLines);
+                await _updateCacheWithCompleteOrder(completeOrder);
+                
+                // ✅ CRÍTICO: También actualizar latestRecords en memoria
+                final index = latestRecords.indexWhere((order) => order.id == orderId);
+                if (index >= 0) {
+                  latestRecords[index] = completeOrder;
+                  print('✅ SALE_ORDER: latestRecords actualizado con líneas en memoria');
+                }
+                
+                return completeOrder;
               }
             } catch (e) {
               print('⚠️ SALE_ORDER_REPO: No se pudieron obtener líneas del servidor: $e');
