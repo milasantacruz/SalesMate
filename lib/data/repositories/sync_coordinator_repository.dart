@@ -259,6 +259,11 @@ class SyncCoordinatorRepository {
       if (operation.model == 'sale.order') {
         createData.remove('partner_name');
         createData.remove('partner_shipping_name');
+        // ✅ FILTRAR: Campo solo para cache offline
+        if (createData.containsKey('order_lines')) {
+          createData.remove('order_lines');
+          print('🧹 SYNC_COORDINATOR: order_lines removido del payload (solo cache)');
+        }
         print('🧹 SYNC_COORDINATOR: Campos de enriquecimiento removidos para sale.order');
       }
       

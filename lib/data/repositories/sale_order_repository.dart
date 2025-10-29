@@ -388,6 +388,11 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
           final total = latestRecords.length;
           final withLines = latestRecords.where((r) => r.orderLines.isNotEmpty).length;
           print('DIAG_BUG_008 loadRecords(): latestRecords total=$total, withLines=$withLines');
+          // DIAG: muestrear primeros 3 para amount_total
+          for (var i = 0; i < (total < 3 ? total : 3); i++) {
+            final o = latestRecords[i];
+            print('DIAG_PRICE loadRecords sample[$i]: id=${o.id}, amount_total=${o.amountTotal}, lines=${o.orderLines.length}');
+          }
         } catch (_) {}
         print('✅ SALE_ORDER_REPO: ${latestRecords.length} records loaded from cache');
       } else {
@@ -420,6 +425,40 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       if (enrichedOrderData['order_lines'] is List) {
         tempOrder['order_lines'] = List.from(enrichedOrderData['order_lines'] as List);
         print('DIAG_BUG_008 _saveToLocalCacheFirst(): preservando order_lines=${(tempOrder['order_lines'] as List).length} en cache temporal');
+      }
+
+      // DIAG: Precio inicial del registro temporal
+      try {
+        final amt = tempOrder['amount_total'];
+        final linesLen = (tempOrder['order_lines'] as List?)?.length ?? 0;
+        print('DIAG_PRICE _saveToLocalCacheFirst: amount_total=$amt, order_lines.len=$linesLen');
+      } catch (_) {}
+
+      // ✅ BUG Precio en tarjeta: calcular amount_total local si falta
+      if (tempOrder['amount_total'] == null) {
+        try {
+          double computedTotal = 0.0;
+          final lines = tempOrder['order_lines'] as List?;
+          if (lines != null && lines.isNotEmpty) {
+            for (final line in lines) {
+              if (line is Map) {
+                final m = Map<String, dynamic>.from(line);
+                final subtotal = (m['price_subtotal'] as num?)?.toDouble();
+                if (subtotal != null) {
+                  computedTotal += subtotal;
+                } else {
+                  final qty = (m['product_uom_qty'] as num?)?.toDouble() ?? 0.0;
+                  final price = (m['price_unit'] as num?)?.toDouble() ?? 0.0;
+                  computedTotal += qty * price;
+                }
+              }
+            }
+          }
+          tempOrder['amount_total'] = computedTotal;
+          print('DIAG_PRICE _saveToLocalCacheFirst: amount_total computed=$computedTotal');
+        } catch (e) {
+          print('DIAG_PRICE _saveToLocalCacheFirst: error computing amount_total: $e');
+        }
       }
       
       print('✅ SALE_ORDER: Datos enriquecidos para cache - Many2one fields convertidos');
@@ -564,6 +603,43 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     }
   }
 
+  /// Actualiza amount_total en memoria y cache persistente para una orden dada
+  Future<void> updateAmountTotalInCache(int orderId, double amountTotal) async {
+    try {
+      // Actualizar en memoria
+      final idx = latestRecords.indexWhere((o) => o.id == orderId);
+      if (idx >= 0) {
+        latestRecords[idx] = latestRecords[idx].copyWith(amountTotal: amountTotal);
+        print('DIAG_PRICE updateAmountTotalInCache: memoria actualizada id=$orderId total=$amountTotal');
+      }
+
+      // Actualizar en cache persistente
+      final cacheKey = 'sale_orders';
+      List<dynamic>? cachedData;
+      if (tenantCache != null) {
+        cachedData = tenantCache!.get(cacheKey) as List?;
+      } else {
+        cachedData = cache.get(cacheKey) as List<dynamic>?;
+      }
+      if (cachedData != null) {
+        final cidx = cachedData.indexWhere((o) => o is Map && o['id'] == orderId);
+        if (cidx >= 0) {
+          final updated = Map<String, dynamic>.from(cachedData[cidx])
+            ..['amount_total'] = amountTotal;
+          cachedData[cidx] = updated;
+          if (tenantCache != null) {
+            await tenantCache!.put(cacheKey, cachedData);
+          } else {
+            await cache.put(cacheKey, cachedData);
+          }
+          print('DIAG_PRICE updateAmountTotalInCache: cache actualizado id=$orderId total=$amountTotal');
+        }
+      }
+    } catch (e) {
+      print('DIAG_PRICE updateAmountTotalInCache: error $e');
+    }
+  }
+
   /// Crea una nueva orden de venta (directamente en servidor cuando online)
   Future<String> createSaleOrder(Map<String, dynamic> orderData) async {
     try {
@@ -587,7 +663,8 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         // ✅ FILTRAR: Remover campos de enriquecimiento antes de enviar a Odoo
         final cleanOrderData = Map<String, dynamic>.from(enrichedData)
           ..remove('partner_name')
-          ..remove('partner_shipping_name');
+          ..remove('partner_shipping_name')
+          ..remove('order_lines'); // ✅ solo cache
         
         print('🧹 SALE_ORDER_REPO: Datos filtrados (removidos campos de enriquecimiento)');
         print('🧹 SALE_ORDER_REPO: Datos que se enviarán: $cleanOrderData');

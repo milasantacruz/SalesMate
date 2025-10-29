@@ -106,6 +106,14 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             }
             // Inicializar controladores de cantidad
             _initializeQuantityControllers();
+          } else if (state is SaleOrderTotalsCalculated) {
+            // ✅ Opción B: Persistir amount_total calculado en cache/memoria
+            try {
+              if (_currentOrder != null) {
+                final repo = getIt<SaleOrderRepository>();
+                repo.updateAmountTotalInCache(_currentOrder!.id, state.totals.amountTotal);
+              }
+            } catch (_) {}
           } else if (state is SaleOrderError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
