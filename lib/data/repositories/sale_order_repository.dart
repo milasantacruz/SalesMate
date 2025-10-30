@@ -1,5 +1,6 @@
 import 'package:odoo_repository/odoo_repository.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
+import 'dart:convert';
 import '../models/sale_order_model.dart';
 import '../models/sale_order_line_model.dart';
 import '../models/order_totals_model.dart';
@@ -306,8 +307,56 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       
       if (cachedData != null) {
         
+        // ✅ NORMALIZACIÓN: Detectar y normalizar orden_lines como String en cache antigua
+        bool needsCacheUpdate = false;
+        final normalizedData = <dynamic>[];
+        
+        for (final record in cachedData) {
+          if (record is Map) {
+            final normalizedRecord = Map<String, dynamic>.from(record);
+            
+            // Detectar order_lines como String y normalizarlo
+            if (normalizedRecord.containsKey('order_lines') && 
+                normalizedRecord['order_lines'] is String) {
+              try {
+                final decoded = jsonDecode(normalizedRecord['order_lines'] as String);
+                if (decoded is List) {
+                  // Normalizar: convertir String a List de Maps
+                  normalizedRecord['order_lines'] = decoded;
+                  needsCacheUpdate = true;
+                  print('✅ SALE_ORDER_REPO: Normalizando orden ${normalizedRecord['id']}: order_lines de String a List');
+                }
+              } catch (e) {
+                print('⚠️ SALE_ORDER_REPO: Error normalizando order_lines: $e');
+              }
+            }
+            
+            normalizedData.add(normalizedRecord);
+          } else {
+            normalizedData.add(record);
+          }
+        }
+        
+        // Si hubo normalizaciones, regrabar el cache
+        if (needsCacheUpdate) {
+          print('✅ SALE_ORDER_REPO: Regrabando cache con datos normalizados...');
+          try {
+            if (tenantCache != null) {
+              await tenantCache!.put(cacheKey, normalizedData);
+            } else {
+              await cache.put(cacheKey, normalizedData);
+            }
+            print('✅ SALE_ORDER_REPO: Cache normalizado correctamente');
+          } catch (e) {
+            print('⚠️ SALE_ORDER_REPO: Error regrabando cache normalizado: $e');
+          }
+        }
+        
+        // Usar datos normalizados para procesar
+        final dataToProcess = needsCacheUpdate ? normalizedData : cachedData;
+        
         // Convertir cada record a Map<String, dynamic> para evitar errores de tipo
-        final cachedRecords = cachedData.map((record) {
+        final cachedRecords = dataToProcess.map((record) {
           try {
             if (record is Map) {
               // Limpiar el Map para asegurar tipos correctos
