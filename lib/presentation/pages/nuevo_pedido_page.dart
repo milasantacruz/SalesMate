@@ -1049,12 +1049,6 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     );
     
     print('🔍 _saveDraft: request.toJson() = ${request.toJson()}');
-    try {
-      final json = request.toJson();
-      final linesLen = (json['order_lines'] as List?)?.length ?? 0;
-      final hasAmountTotal = json.containsKey('amount_total');
-      print('DIAG_PRICE _saveDraft: order_lines.len=$linesLen, has amount_total? $hasAmountTotal');
-    } catch (_) {}
 
     context
         .read<SaleOrderBloc>()
@@ -1132,11 +1126,6 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     }
 
     print('📦 NUEVO_PEDIDO: Creando orden con datos: $orderData');
-    try {
-      final linesLen = (orderData['order_lines'] as List?)?.length ?? 0;
-      final hasAmountTotal = orderData.containsKey('amount_total');
-      print('DIAG_PRICE _sendOrder: order_lines.len=$linesLen, has amount_total? $hasAmountTotal');
-    } catch (_) {}
 
     context
         .read<SaleOrderBloc>()

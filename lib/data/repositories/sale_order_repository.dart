@@ -375,25 +375,8 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
             rethrow;
           }
         }).toList();
-        
-        // DIAG_BUG_008: métricas de order_lines en cache antes de filtros
-        try {
-          final total = cachedRecords.length;
-          final withLines = cachedRecords.where((r) => (r.orderLines).isNotEmpty).length;
-          print('DIAG_BUG_008 loadRecords(): cachedRecords total=$total, withLines=$withLines');
-        } catch (_) {}
 
         latestRecords = _applyLocalFilters(cachedRecords);
-        try {
-          final total = latestRecords.length;
-          final withLines = latestRecords.where((r) => r.orderLines.isNotEmpty).length;
-          print('DIAG_BUG_008 loadRecords(): latestRecords total=$total, withLines=$withLines');
-          // DIAG: muestrear primeros 3 para amount_total
-          for (var i = 0; i < (total < 3 ? total : 3); i++) {
-            final o = latestRecords[i];
-            print('DIAG_PRICE loadRecords sample[$i]: id=${o.id}, amount_total=${o.amountTotal}, lines=${o.orderLines.length}');
-          }
-        } catch (_) {}
         print('✅ SALE_ORDER_REPO: ${latestRecords.length} records loaded from cache');
       } else {
         latestRecords = [];
@@ -424,15 +407,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       // ✅ BUG-008 (extensión): si vienen líneas desde la UI, preservarlas en cache
       if (enrichedOrderData['order_lines'] is List) {
         tempOrder['order_lines'] = List.from(enrichedOrderData['order_lines'] as List);
-        print('DIAG_BUG_008 _saveToLocalCacheFirst(): preservando order_lines=${(tempOrder['order_lines'] as List).length} en cache temporal');
       }
-
-      // DIAG: Precio inicial del registro temporal
-      try {
-        final amt = tempOrder['amount_total'];
-        final linesLen = (tempOrder['order_lines'] as List?)?.length ?? 0;
-        print('DIAG_PRICE _saveToLocalCacheFirst: amount_total=$amt, order_lines.len=$linesLen');
-      } catch (_) {}
 
       // ✅ BUG Precio en tarjeta: calcular amount_total local si falta
       if (tempOrder['amount_total'] == null) {
@@ -455,9 +430,8 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
             }
           }
           tempOrder['amount_total'] = computedTotal;
-          print('DIAG_PRICE _saveToLocalCacheFirst: amount_total computed=$computedTotal');
         } catch (e) {
-          print('DIAG_PRICE _saveToLocalCacheFirst: error computing amount_total: $e');
+          print('⚠️ SALE_ORDER: Error calculando amount_total local: $e');
         }
       }
       
@@ -580,7 +554,6 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       }
       
       if (cachedData != null) {
-        print('DIAG_BUG_008 updateCacheWithCompleteOrder(): before put - orderId=${completeOrder.id}, lines=${completeOrder.orderLines.length}');
         final index = cachedData.indexWhere((o) => o is Map && o['id'] == completeOrder.id);
         if (index >= 0) {
           // Actualizar con orden completa (incluye líneas)
@@ -593,7 +566,6 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
           }
           
           print('✅ SALE_ORDER: Cache actualizado con líneas completas para orden ${completeOrder.id}');
-          print('DIAG_BUG_008 updateCacheWithCompleteOrder(): after put - cache length=${cachedData.length}');
         } else {
           print('⚠️ SALE_ORDER: No se encontró orden ${completeOrder.id} en cache');
         }
@@ -610,7 +582,6 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       final idx = latestRecords.indexWhere((o) => o.id == orderId);
       if (idx >= 0) {
         latestRecords[idx] = latestRecords[idx].copyWith(amountTotal: amountTotal);
-        print('DIAG_PRICE updateAmountTotalInCache: memoria actualizada id=$orderId total=$amountTotal');
       }
 
       // Actualizar en cache persistente
@@ -632,11 +603,10 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
           } else {
             await cache.put(cacheKey, cachedData);
           }
-          print('DIAG_PRICE updateAmountTotalInCache: cache actualizado id=$orderId total=$amountTotal');
         }
       }
     } catch (e) {
-      print('DIAG_PRICE updateAmountTotalInCache: error $e');
+      print('⚠️ SALE_ORDER: Error actualizando amount_total en cache: $e');
     }
   }
 
@@ -1154,7 +1124,6 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       
       if (cachedOrder != null) {
         print('✅ SALE_ORDER_REPO: Orden $orderId encontrada en latestRecords (cache memoria)');
-        print('DIAG_BUG_008 getOrderById($orderId): source=latestRecords, lines=${cachedOrder.orderLines.length}, lineIds=${cachedOrder.orderLineIds.length}');
         
         // Si la orden en cache no tiene líneas, intentar obtenerlas del servidor (solo si hay conexión)
         if (cachedOrder.orderLines.isEmpty && cachedOrder.orderLineIds.isNotEmpty) {
@@ -1221,7 +1190,6 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       final reloadedOrder = latestRecords.where((order) => order.id == orderId).firstOrNull;
       if (reloadedOrder != null) {
         print('✅ SALE_ORDER_REPO: Orden $orderId encontrada después de cargar desde cache persistente');
-        print('DIAG_BUG_008 getOrderById($orderId): source=persistentCache, lines=${reloadedOrder.orderLines.length}, lineIds=${reloadedOrder.orderLineIds.length}');
         return reloadedOrder;
       }
       

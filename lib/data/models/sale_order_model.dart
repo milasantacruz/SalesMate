@@ -152,11 +152,6 @@ class SaleOrder extends Equatable implements OdooRecord {
       'write_uid': writeUid,
       'write_date': writeDate,
     };
-    try {
-      if (orderLines.isNotEmpty) {
-        print('DIAG_BUG_008 SaleOrder.toJson(): id=$id, order_lines=${orderLines.length}');
-      }
-    } catch (_) {}
     return json;
   }
 
@@ -288,7 +283,6 @@ List<SaleOrderLine> _parseOrderLinesFromJson(Map<String, dynamic> json) {
               })
               .whereType<SaleOrderLine>()
               .toList();
-          print('DIAG_BUG_008 SaleOrder.fromJson(): id=${json['id']}, parsed(order_lines as String)=${linesFromString.length}');
           return linesFromString;
         }
       } catch (_) {}
@@ -311,9 +305,6 @@ List<SaleOrderLine> _parseOrderLinesFromJson(Map<String, dynamic> json) {
           })
           .whereType<SaleOrderLine>()
           .toList();
-      try {
-        print('DIAG_BUG_008 SaleOrder.fromJson(): id=${json['id']}, parsed order_lines=${lines.length}');
-      } catch (_) {}
       return lines;
     }
 
