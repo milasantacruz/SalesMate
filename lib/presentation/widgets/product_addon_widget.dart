@@ -54,20 +54,27 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
   double _parseControllerQuantity() {
     final text = _qtyController.text.replaceAll(',', '.');
     final parsed = double.tryParse(text);
-    if (parsed == null || parsed <= 0) return 1;
+    if (parsed == null) return 0;
+    if (parsed < 0) return 0;
     return parsed;
   }
 
   void _increment() {
     final current = _parseControllerQuantity();
     final next = current + 1.0;
+    _qtyController.text = next.toInt().toString();
     widget.onQuantityChanged(next);
+    setState(() {});
   }
 
   void _decrement() {
     final current = _parseControllerQuantity();
-    final next = current > 1.0 ? current - 1.0 : 1.0;
-    if (next != current) widget.onQuantityChanged(next);
+    final next = current > 0.0 ? current - 1.0 : 0.0;
+    if (next != current) {
+      _qtyController.text = next.toInt().toString();
+      widget.onQuantityChanged(next);
+      setState(() {});
+    }
   }
 
   @override
@@ -170,14 +177,14 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
                           },
                           onChanged: (val) {
                             final intQty = int.tryParse(val);
-                            if (intQty != null && intQty > 0) {
+                            if (intQty != null && intQty >= 0) {
                               widget.onQuantityChanged(intQty.toDouble());
                             }
                             setState(() {});
                           },
                           onSubmitted: (val) {
-                            final intQty = int.tryParse(val) ?? 1;
-                            final int normalized = intQty <= 0 ? 1 : intQty;
+                            final intQty = int.tryParse(val) ?? 0;
+                            final int normalized = intQty < 0 ? 0 : intQty;
                             _qtyController.text = normalized.toString();
                             widget.onQuantityChanged(normalized.toDouble());
                           },
@@ -188,7 +195,7 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
                       IconButton(
                         onPressed: _decrement,
                         icon: const Icon(Icons.remove_circle_outline),
-                        color: _parseControllerQuantity() > 1.0 ? Colors.red : Colors.grey,
+                        color: _parseControllerQuantity() > 0.0 ? Colors.red : Colors.grey,
                         iconSize: 24,
                       ),
                     ],
