@@ -183,15 +183,19 @@ class SaleOrderBloc extends Bloc<SaleOrderEvent, SaleOrderState> {
     LoadSaleOrderById event,
     Emitter<SaleOrderState> emit,
   ) async {
+    print('📥 SALE_ORDER_BLOC: _onLoadSaleOrderById start - orderId=${event.orderId}');
     emit(SaleOrderLoading());
     try {
       final order = await _saleOrderRepository.getOrderById(event.orderId);
       if (order != null) {
+        print('📤 SALE_ORDER_BLOC: _onLoadSaleOrderById success - emitting LoadedById (id=${order.id}, lines=${order.orderLines.length})');
         emit(SaleOrderLoadedById(order: order));
       } else {
+        print('❌ SALE_ORDER_BLOC: _onLoadSaleOrderById not found');
         emit(SaleOrderError('Orden no encontrada'));
       }
     } catch (e) {
+      print('❌ SALE_ORDER_BLOC: _onLoadSaleOrderById error: $e');
       emit(SaleOrderError('Error cargando orden: $e'));
     }
   }

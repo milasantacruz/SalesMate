@@ -271,6 +271,11 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   List<SaleOrder> _applyLocalFilters(List<SaleOrder> allRecords) {
     var filteredRecords = allRecords;
     
+    // Excluir órdenes temporales de cálculo (debug)
+    filteredRecords = filteredRecords
+        .where((order) => !(order.name.startsWith('TEMP_CALC') || order.name.contains('TEMP_CALC')))
+        .toList();
+
     // Filtro por término de búsqueda
     if (_searchTerm.isNotEmpty) {
       filteredRecords = filteredRecords.where((order) {
@@ -890,6 +895,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     // Generar clave de cache
     final cacheKey = _generateTotalsCacheKey(partnerId, orderLines);
     
+    print('🧪 DIAG_TOT: calculateOrderTotals() start - partnerId=$partnerId, lines=${orderLines.length}');
     print('🧮 SALE_ORDER_REPO: ⚠️ CALCULANDO TOTALES - Partner: $partnerId, Lines: ${orderLines.length}');
     print('🧮 SALE_ORDER_REPO: ⚠️ Stack trace: ${StackTrace.current.toString().split('\n').take(5).join('\n')}');
     
@@ -975,6 +981,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         _cleanupCache(); // Limpiar cache si es muy grande
         
         print('✅ SALE_ORDER_REPO: Totales calculados con Odoo: ${result.amountTotal}');
+        print('🧪 DIAG_TOT: calculateOrderTotals() end (server) - amountTotal=${result.amountTotal}');
         return result;
         
       } finally {
@@ -1011,6 +1018,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         _cleanupCache();
         
         print('✅ SALE_ORDER_REPO: Totales calculados localmente: ${totals.amountTotal}');
+        print('🧪 DIAG_TOT: calculateOrderTotals() end (local) - amountTotal=${totals.amountTotal}');
         return totals;
       }
   }
@@ -1421,6 +1429,22 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   }) async {
     try {
       print('🛒 SALE_ORDER_REPO: Creando línea para orden $orderId, producto $productId');
+      try {
+        final state = await netConn.checkNetConn();
+        print('🌐 DIAG_WRITE createOrderLine net=${state.name}');
+        if (state != netConnState.online) {
+          // OFFLINE: Encolar operación y actualizar cache local
+          final data = {
+            'order_id': orderId,
+            'product_id': productId,
+            'product_uom_qty': quantity,
+            if (priceUnit != null) 'price_unit': priceUnit,
+          };
+          await _callQueue.createRecord('sale.order.line', data);
+          await _applyLocalLineCreate(orderId, productId, quantity, priceUnit);
+          return -DateTime.now().millisecondsSinceEpoch; // id temporal negativo
+        }
+      } catch (_) {}
       
       final data = {
         'order_id': orderId,
@@ -1456,6 +1480,18 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   }) async {
     try {
       print('🛒 SALE_ORDER_REPO: Actualizando línea $lineId');
+      try {
+        final state = await netConn.checkNetConn();
+        print('🌐 DIAG_WRITE updateOrderLine net=${state.name}');
+        if (state != netConnState.online) {
+          final data = <String, dynamic>{};
+          if (quantity != null) data['product_uom_qty'] = quantity;
+          if (priceUnit != null) data['price_unit'] = priceUnit;
+          await _callQueue.updateRecord('sale.order.line', lineId, data);
+          await _applyLocalLineUpdate(lineId, quantity: quantity, priceUnit: priceUnit);
+          return;
+        }
+      } catch (_) {}
       
       final data = <String, dynamic>{};
       if (quantity != null) {
@@ -1487,6 +1523,15 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   Future<void> deleteOrderLine(int lineId) async {
     try {
       print('🛒 SALE_ORDER_REPO: Eliminando línea $lineId');
+      try {
+        final state = await netConn.checkNetConn();
+        print('🌐 DIAG_WRITE deleteOrderLine net=${state.name}');
+        if (state != netConnState.online) {
+          await _callQueue.deleteRecord('sale.order.line', lineId);
+          await _applyLocalLineDelete(lineId);
+          return;
+        }
+      } catch (_) {}
       
       await env.orpc.callKw({
         'model': 'sale.order.line',
@@ -1501,6 +1546,80 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       print('❌ SALE_ORDER_REPO: Error eliminando línea: $e');
       rethrow;
     }
+  }
+
+  // === Helpers Local-First para líneas ===
+  Future<void> _applyLocalLineCreate(int orderId, int productId, double qty, double? priceUnit) async {
+    try {
+      // Actualizar en memoria
+      final idx = latestRecords.indexWhere((o) => o.id == orderId);
+      if (idx >= 0) {
+        final order = latestRecords[idx];
+        final newLine = SaleOrderLine(
+          id: null,
+          productId: productId,
+          productName: '',
+          productCode: null,
+          quantity: qty,
+          priceUnit: priceUnit ?? 0,
+          priceSubtotal: (priceUnit ?? 0) * qty,
+          taxesIds: const [],
+        );
+        final updated = order.copyWith(orderLines: List<SaleOrderLine>.from(order.orderLines)..add(newLine));
+        latestRecords[idx] = updated;
+        await _persistLatestRecords();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _applyLocalLineUpdate(int lineId, {double? quantity, double? priceUnit}) async {
+    try {
+      for (int i = 0; i < latestRecords.length; i++) {
+        final order = latestRecords[i];
+        final lineIdx = order.orderLines.indexWhere((l) => l.id == lineId);
+        if (lineIdx >= 0) {
+          final line = order.orderLines[lineIdx];
+          final newQty = quantity ?? line.quantity;
+          final newPrice = priceUnit ?? line.priceUnit;
+          final updatedLine = line.copyWith(
+            quantity: newQty,
+            priceUnit: newPrice,
+            priceSubtotal: newQty * newPrice,
+          );
+          final newLines = List<SaleOrderLine>.from(order.orderLines);
+          newLines[lineIdx] = updatedLine;
+          latestRecords[i] = order.copyWith(orderLines: newLines);
+          await _persistLatestRecords();
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _applyLocalLineDelete(int lineId) async {
+    try {
+      for (int i = 0; i < latestRecords.length; i++) {
+        final order = latestRecords[i];
+        final newLines = order.orderLines.where((l) => l.id != lineId).toList();
+        if (newLines.length != order.orderLines.length) {
+          latestRecords[i] = order.copyWith(orderLines: newLines);
+          await _persistLatestRecords();
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistLatestRecords() async {
+    try {
+      final cacheKey = 'sale_orders';
+      final serialized = latestRecords.map((o) => o.toJson()).toList();
+      if (tenantCache != null) {
+        await tenantCache!.put(cacheKey, serialized);
+      } else {
+        await cache.put(cacheKey, serialized);
+      }
+    } catch (_) {}
   }
 
   Future<List<Map<String, dynamic>>> fetchIncrementalRecords(String since) async {

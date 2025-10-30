@@ -27,6 +27,34 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
   Timer? _calculationTimer;
   String? _lastCalculationKey;
   
+  Widget _buildRow(BuildContext context, String label, double amount, {bool isTotal = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: isTotal
+                ? Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    )
+                : Theme.of(context).textTheme.bodyMedium,
+          ),
+          Text(
+            '\$${amount.toStringAsFixed(2)}',
+            style: isTotal
+                ? Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    )
+                : Theme.of(context).textTheme.bodyMedium,
+          ),
+        ],
+      ),
+    );
+  }
+  
   @override
   void initState() {
     super.initState();
@@ -141,6 +169,36 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
   
   @override
   Widget build(BuildContext context) {
+    // Mientras se edita, mostramos un cálculo local inmediato para evitar el loop de loading
+    if (widget.isEditing) {
+      final localTotals = _calculateLocalTotals(widget.orderLines);
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Resumen (edición)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 16),
+              _buildRow(context, 'Subtotal:', localTotals.amountUntaxed),
+              // Mostrar impuestos estimados como 0 durante edición
+              _buildRow(context, 'Impuestos (estimado):', 0.0),
+              const Divider(),
+              _buildRow(context, 'Total:', localTotals.amountTotal, isTotal: true),
+              const SizedBox(height: 6),
+              Text(
+                'Los impuestos definitivos se calculan al guardar.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return BlocBuilder<SaleOrderBloc, SaleOrderState>(
       builder: (context, state) {
         // Verificar si hay datos suficientes para calcular
@@ -159,6 +217,27 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
         // Estado inicial - mostrar loading
         return const _LoadingTotals();
       },
+    );
+  }
+
+  // Cálculo local de totales para modo edición (sin llamadas a servidor)
+  OrderTotals _calculateLocalTotals(List<SaleOrderLine> lines) {
+    double amountUntaxed = 0.0;
+    for (final line in lines) {
+      final subtotal = line.priceSubtotal.toDouble();
+      if (subtotal > 0) {
+        amountUntaxed += subtotal;
+      } else {
+        final qty = (line.quantity).toDouble();
+        final unit = (line.priceUnit).toDouble();
+        amountUntaxed += qty * unit;
+      }
+    }
+    return OrderTotals(
+      amountUntaxed: amountUntaxed,
+      amountTax: 0.0,
+      amountTotal: amountUntaxed,
+      taxGroups: const [],
     );
   }
 }

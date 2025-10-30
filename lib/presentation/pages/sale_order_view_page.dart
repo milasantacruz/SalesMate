@@ -12,6 +12,7 @@ import '../widgets/order_totals_widget.dart';
 import '../widgets/product_search_popup.dart';
 import '../widgets/create_shipping_address_dialog.dart';
 import '../../core/di/injection_container.dart';
+import '../../core/network/network_connectivity.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/shipping_address_repository.dart';
 
@@ -641,6 +642,12 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
   void _saveOrder() async {
     if (_currentOrder == null) return;
     
+    print('🧪 SAVE_FLOW: _saveOrder() start - isEditing=$_isEditing, orderId=${_currentOrder!.id}');
+    try {
+      final net = getIt<NetworkConnectivity>();
+      final state = await net.checkNetConn();
+      print('🌐 DIAG_SAVE net=${state.name}');
+    } catch (_) {}
     print('💾 GUARDANDO ORDEN: ${_currentOrder!.id}');
     print('💾 LÍNEAS ACTUALES: ${_orderLines.length}');
     
@@ -724,6 +731,15 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
       // Recargar la orden para obtener los datos actualizados
       print('🔄 Recargando orden después de actualizaciones...');
       context.read<SaleOrderBloc>().add(LoadSaleOrderById(orderId: _currentOrder!.id));
+      // Salir de modo edición para permitir el cálculo de totales
+      if (mounted) {
+        setState(() {
+          _isEditing = false;
+        });
+      }
+      // Refrescar lista de órdenes para reflejar cambios en la vista de listado
+      print('🔄 Refrescando lista de órdenes tras guardar...');
+      context.read<SaleOrderBloc>().add(RefreshSaleOrders());
       
       // Mostrar mensaje de éxito
       if (mounted) {
@@ -733,6 +749,8 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             backgroundColor: Colors.green,
           ),
         );
+        // Cerrar la vista de orden tras guardar
+        Navigator.of(context).pop();
       }
       
     } catch (e) {
@@ -746,6 +764,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
         );
       }
     }
+    print('🧪 SAVE_FLOW: _saveOrder() end - isEditing=$_isEditing');
   }
 
   /// Crea una nueva línea de orden directamente usando sale.order.line.create
