@@ -19,6 +19,20 @@ class _SaleOrdersListState extends State<SaleOrdersList> {
   Timer? _debounce;
   String? _selectedState;
 
+  String _fmtCurrency(num value) {
+    int n = value.round();
+    final s = n.toString();
+    final sb = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      sb.write(s[i]);
+      count++;
+      if (count % 3 == 0 && i != 0) sb.write('.');
+    }
+    final rev = sb.toString().split('').reversed.join();
+    return '4$rev';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -96,14 +110,14 @@ class _SaleOrdersListState extends State<SaleOrdersList> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                Text(
-                                  '\$${order.amountTotal.toStringAsFixed(2)}',
+                               /* Text(
+                                  _fmtCurrency(order.amountTotal),
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Colors.green,
                                       fontSize: 14),
                                   overflow: TextOverflow.ellipsis,
-                                ),
+                                ),*/
                                 const SizedBox(height: 2),
                                 Chip(
                                   label: Text(

@@ -15,6 +15,7 @@ import '../../core/di/injection_container.dart';
 import '../../core/network/network_connectivity.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/shipping_address_repository.dart';
+import 'package:flutter/services.dart';
 
 /// Página para visualizar y editar una orden de venta existente
 class SaleOrderViewPage extends StatefulWidget {
@@ -35,6 +36,19 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
   List<SaleOrderLine> _originalOrderLines = []; // Copia de las líneas originales
   bool _isEditing = false;
   bool _auditInfoExpanded = false; // Estado para auditoría desplegable
+  String _fmtCurrency(num value) {
+    int n = value.round();
+    final s = n.toString();
+    final sb = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      sb.write(s[i]);
+      count++;
+      if (count % 3 == 0 && i != 0) sb.write('.');
+    }
+    final rev = sb.toString().split('').reversed.join();
+    return ' 4$rev';
+  }
   
   // Variables para edición
   Partner? _selectedShippingAddress;
@@ -251,7 +265,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             if (_currentOrder!.partnerName != null)
               Text('Cliente: ${_currentOrder!.partnerName}'),
             Text('Fecha: ${_formatDate(_currentOrder!.dateOrder)}'),
-            Text('Total: \$${_currentOrder!.amountTotal.toStringAsFixed(2)}'),
+            Text('Total: ${_fmtCurrency(_currentOrder!.amountTotal)}'),
             const SizedBox(height: 16),
             
             // Sección de dirección de despacho
@@ -557,7 +571,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
                         ),
                       ),
                       Text(
-                        'Precio: \$${line.priceUnit.toStringAsFixed(2)}',
+                        'Precio: ${_fmtCurrency(line.priceUnit)}',
                         style: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 14,
@@ -565,7 +579,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
                       ),
                       if (line.priceSubtotal > 0)
                         Text(
-                          'Subtotal: \$${line.priceSubtotal.toStringAsFixed(2)}',
+                          'Subtotal: ${_fmtCurrency(line.priceSubtotal)}',
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
@@ -586,13 +600,17 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
                         child: TextFormField(
                           controller: _quantityControllers[line.productId],
                           keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
                           textAlign: TextAlign.center,
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
                             contentPadding: EdgeInsets.symmetric(vertical: 8),
                           ),
                           onChanged: (value) {
-                            final quantity = double.tryParse(value) ?? 0;
+                            final intQty = int.tryParse(value) ?? 0;
+                            final quantity = intQty.toDouble();
                             print('📝 TEXTFIELD CHANGED: productId=${line.productId}, oldQuantity=${line.quantity}, newQuantity=$quantity');
                             if (quantity != line.quantity) {
                               print('📝 UPDATING LINE: ${line.productId} quantity from ${line.quantity} to $quantity');
@@ -1323,7 +1341,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     // Crear controladores para cada línea
     for (var line in _orderLines) {
       _quantityControllers[line.productId] = TextEditingController(
-        text: line.quantity.toString(),
+        text: line.quantity.toInt().toString(),
       );
     }
   }
@@ -1345,7 +1363,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     for (var line in _orderLines) {
       if (!_quantityControllers.containsKey(line.productId)) {
         _quantityControllers[line.productId] = TextEditingController(
-          text: line.quantity.toString(),
+          text: line.quantity.toInt().toString(),
         );
       }
     }

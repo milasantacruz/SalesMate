@@ -153,9 +153,9 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
                           controller: _qtyController,
                           focusNode: _qtyFocusNode,
                           textAlign: TextAlign.center,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: TextInputType.number,
                           inputFormatters: [
-                            FilteringTextInputFormatter.allow(RegExp(r'^[0-9]*[\.,]?[0-9]{0,2}')),
+                            FilteringTextInputFormatter.digitsOnly,
                           ],
                           decoration: InputDecoration(
                             isDense: true,
@@ -169,17 +169,17 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
                             _qtyController.selection = TextSelection(baseOffset: 0, extentOffset: _qtyController.text.length);
                           },
                           onChanged: (val) {
-                            final parsed = double.tryParse(val.replaceAll(',', '.'));
-                            if (parsed != null && parsed > 0) {
-                              widget.onQuantityChanged(parsed);
+                            final intQty = int.tryParse(val);
+                            if (intQty != null && intQty > 0) {
+                              widget.onQuantityChanged(intQty.toDouble());
                             }
                             setState(() {});
                           },
                           onSubmitted: (val) {
-                            final parsed = double.tryParse(val.replaceAll(',', '.')) ?? 1.0;
-                            final double normalized = parsed <= 0 ? 1.0 : parsed;
-                            _qtyController.text = _formatQuantity(normalized);
-                            widget.onQuantityChanged(normalized);
+                            final intQty = int.tryParse(val) ?? 1;
+                            final int normalized = intQty <= 0 ? 1 : intQty;
+                            _qtyController.text = normalized.toString();
+                            widget.onQuantityChanged(normalized.toDouble());
                           },
                         ),
                       ),
@@ -197,7 +197,7 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
                   // Subtotal de la línea
                   const SizedBox(height: 4),
                   Text(
-                    'Subtotal: \$${(widget.product.listPrice * (_parseControllerQuantity())).toStringAsFixed(2)}',
+                    'Subtotal: ${_fmtCurrency(widget.product.listPrice * (_parseControllerQuantity()))}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Colors.blue,
@@ -211,6 +211,20 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
         ),
       ),
     ));
+  }
+
+  String _fmtCurrency(num value) {
+    int n = value.round();
+    final s = n.toString();
+    final sb = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      sb.write(s[i]);
+      count++;
+      if (count % 3 == 0 && i != 0) sb.write('.');
+    }
+    final rev = sb.toString().split('').reversed.join();
+    return '\u00024$rev';
   }
 
   void _showRemoveOptions(BuildContext context) {

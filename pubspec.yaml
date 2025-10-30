@@ -53,6 +53,7 @@ dependencies:
   # Equatable para comparaciones
   equatable: ^2.0.5
   flex_color_scheme: ^8.2.0
+  intl: ^0.18.1
 
 dev_dependencies:
   flutter_test:

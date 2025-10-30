@@ -41,6 +41,20 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
   List<SaleOrderLine> _orderLines = [];
   bool _isLoading = false;
 
+  String _fmtCurrency(num value) {
+    int n = value.round();
+    final s = n.toString();
+    final sb = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      sb.write(s[i]);
+      count++;
+      if (count % 3 == 0 && i != 0) sb.write('.');
+    }
+    final rev = sb.toString().split('').reversed.join();
+    return '4$rev';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1143,7 +1157,7 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
           children: [
             Text('Cliente: ${_selectedPartner?.name ?? 'No seleccionado'}'),
             Text('Productos: ${_orderLines.length}'),
-            Text('Total: \$${_orderLines.fold(0.0, (sum, line) => sum + line.subtotal).toStringAsFixed(2)}'),
+            Text('Total: ${_fmtCurrency(_orderLines.fold<num>(0, (sum, line) => sum + line.subtotal))}')
           ],
         ),
         actions: [

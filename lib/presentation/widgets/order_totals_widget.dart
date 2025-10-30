@@ -26,6 +26,19 @@ class OrderTotalsWidget extends StatefulWidget {
 class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
   Timer? _calculationTimer;
   String? _lastCalculationKey;
+  String _fmtCurrency(num value) {
+    int n = value.round();
+    final s = n.toString();
+    final sb = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      sb.write(s[i]);
+      count++;
+      if (count % 3 == 0 && i != 0) sb.write('.');
+    }
+    final rev = sb.toString().split('').reversed.join();
+    return ' 4$rev';
+  }
   
   Widget _buildRow(BuildContext context, String label, double amount, {bool isTotal = false}) {
     return Padding(
@@ -42,7 +55,7 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
                 : Theme.of(context).textTheme.bodyMedium,
           ),
           Text(
-            '\$${amount.toStringAsFixed(2)}',
+            _fmtCurrency(amount),
             style: isTotal
                 ? Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
@@ -280,6 +293,19 @@ class _TotalsContent extends StatelessWidget {
   final OrderTotals totals;
   
   const _TotalsContent({required this.totals});
+  String _fmtCurrency(num value) {
+    int n = value.round();
+    final s = n.toString();
+    final sb = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      sb.write(s[i]);
+      count++;
+      if (count % 3 == 0 && i != 0) sb.write('.');
+    }
+    final rev = sb.toString().split('').reversed.join();
+    return '\u00024$rev';
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -323,7 +349,7 @@ class _TotalsContent extends StatelessWidget {
                 : Theme.of(context).textTheme.bodyMedium,
           ),
           Text(
-            '\$${amount.toStringAsFixed(2)}',
+            _fmtCurrency(amount),
             style: isTotal 
                 ? Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
