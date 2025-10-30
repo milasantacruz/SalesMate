@@ -50,9 +50,29 @@ class ProductRepository extends OfflineOdooRepository<Product> {
       ]);
     }
 
-    // Filtro por tipo de producto
+    // Filtro por tipo de producto con nueva lógica (type + is_storable)
     if (_type != null && _type!.isNotEmpty) {
-      domain.add(['type', '=', _type!]);
+      if (_type == 'product') {
+        // Producto: type=consu AND is_storable=true
+        domain.addAll([
+          ['type', '=', 'consu'],
+          ['is_storable', '=', true],
+        ]);
+      } else if (_type == 'consu') {
+        // Consumible: type=consu AND is_storable=false
+        domain.addAll([
+          ['type', '=', 'consu'],
+          ['is_storable', '=', false],
+        ]);
+      } else if (_type == 'service') {
+        // Servicio: type=service AND is_storable=false
+        domain.addAll([
+          ['type', '=', 'service'],
+          ['is_storable', '=', false],
+        ]);
+      } else {
+        domain.add(['type', '=', _type!]);
+      }
     }
 
     print('🔍 PRODUCT_REPO: Domain: $domain');
@@ -259,9 +279,23 @@ class ProductRepository extends OfflineOdooRepository<Product> {
       }).toList();
     }
 
-    // Aplicar filtro por tipo
+    // Aplicar filtro por tipo con nueva lógica (type + is_storable)
     if (_type != null && _type!.isNotEmpty) {
-      filteredRecords = filteredRecords.where((product) => product.type == _type).toList();
+      if (_type == 'product') {
+        filteredRecords = filteredRecords
+            .where((p) => p.type == 'consu' && p.isStorable == true)
+            .toList();
+      } else if (_type == 'consu') {
+        filteredRecords = filteredRecords
+            .where((p) => p.type == 'consu' && p.isStorable == false)
+            .toList();
+      } else if (_type == 'service') {
+        filteredRecords = filteredRecords
+            .where((p) => p.type == 'service' && p.isStorable == false)
+            .toList();
+      } else {
+        filteredRecords = filteredRecords.where((p) => p.type == _type).toList();
+      }
     }
 
     // Aplicar límite y offset

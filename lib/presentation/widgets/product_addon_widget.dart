@@ -277,23 +277,23 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
   Widget _buildTypeChip() {
     Color chipColor;
     String chipText;
-    
-    switch (widget.product.type) {
-      case 'product':
-        chipColor = Colors.blue.shade100;
-        chipText = 'Producto';
-        break;
-      case 'service':
-        chipColor = Colors.green.shade100;
-        chipText = 'Servicio';
-        break;
-      case 'consu':
-        chipColor = Colors.orange.shade100;
-        chipText = 'Consumible';
-        break;
-      default:
-        chipColor = Colors.grey.shade200;
-        chipText = widget.product.type;
+
+    // Nueva lógica: servicio (type=service, is_storable=false),
+    // consumible (type=consu, is_storable=false),
+    // producto (type=consu, is_storable=true)
+    if (widget.product.type == 'service' && widget.product.isStorable == false) {
+      chipColor = Colors.green.shade100;
+      chipText = 'Servicio';
+    } else if (widget.product.type == 'consu' && widget.product.isStorable == true) {
+      chipColor = Colors.blue.shade100;
+      chipText = 'Producto';
+    } else if (widget.product.type == 'consu' && widget.product.isStorable == false) {
+      chipColor = Colors.orange.shade100;
+      chipText = 'Consumible';
+    } else {
+      // Fallback para otros casos (incluye type='product' sin is_storable)
+      chipColor = Colors.grey.shade200;
+      chipText = widget.product.type;
     }
     
     return Container(

@@ -81,7 +81,7 @@ class _ProductsListState extends State<ProductsList> {
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Tipo: ${_getTypeDisplayName(product.type)}'),
+                      Text('Tipo: ${_getTypeDisplayName(product)}'),
                               if (product.uomName != null)
                                 Text('UOM: ${product.uomName}'),
                               if (product.taxesIds.isNotEmpty)
@@ -100,7 +100,7 @@ class _ProductsListState extends State<ProductsList> {
                                     fontSize: 16),
                               ),
                               const SizedBox(height: 4),
-                              _buildProductTypeChip(product.type),
+                              _buildProductTypeChip(product),
                             ],
                           ),
                         ),
@@ -225,37 +225,26 @@ class _ProductsListState extends State<ProductsList> {
     );
   }
 
-  Widget _buildProductTypeChip(String type) {
+  Widget _buildProductTypeChip(product) {
     return Chip(
-      label: Text(_getTypeDisplayName(type)),
-      backgroundColor: _getTypeColor(type),
+      label: Text(_getTypeDisplayName(product)),
+      backgroundColor: _getTypeColor(product),
       labelStyle: const TextStyle(fontSize: 12),
     );
   }
 
-  String _getTypeDisplayName(String type) {
-    switch (type) {
-      case 'product':
-        return 'Producto';
-      case 'service':
-        return 'Servicio';
-      case 'consu':
-        return 'Consumible';
-      default:
-        return type;
-    }
+  String _getTypeDisplayName(product) {
+    // Nueva lógica basada en type + is_storable
+    if (product.type == 'service' && product.isStorable == false) return 'Servicio';
+    if (product.type == 'consu' && product.isStorable == true) return 'Producto';
+    if (product.type == 'consu' && product.isStorable == false) return 'Consumible';
+    return product.type;
   }
 
-  Color _getTypeColor(String type) {
-    switch (type) {
-      case 'product':
-        return Colors.blue.shade100;
-      case 'service':
-        return Colors.green.shade100;
-      case 'consu':
-        return Colors.orange.shade100;
-      default:
-        return Colors.grey.shade200;
-    }
+  Color _getTypeColor(product) {
+    if (product.type == 'service' && product.isStorable == false) return Colors.green.shade100;
+    if (product.type == 'consu' && product.isStorable == true) return Colors.blue.shade100;
+    if (product.type == 'consu' && product.isStorable == false) return Colors.orange.shade100;
+    return Colors.grey.shade200;
   }
 }

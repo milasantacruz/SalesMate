@@ -12,6 +12,7 @@ class Product extends Equatable implements OdooRecord {
   final String? uomName;
   final List<int> taxesIds;
   final int? productTmplId;
+  final bool isStorable;
 
   const Product({
     required this.id,
@@ -23,6 +24,7 @@ class Product extends Equatable implements OdooRecord {
     this.uomName,
     this.taxesIds = const [],
     this.productTmplId,
+    this.isStorable = false,
   });
 
   /// Crea un Product desde JSON
@@ -46,6 +48,11 @@ class Product extends Equatable implements OdooRecord {
       productTmplId: json['product_tmpl_id'] is List 
           ? (json['product_tmpl_id'] as List).isNotEmpty ? (json['product_tmpl_id'] as List)[0] as int? : null
           : json['product_tmpl_id'] as int?,
+      isStorable: json['is_storable'] is bool
+          ? json['is_storable'] as bool
+          : (json['is_storable'] is String
+              ? ((json['is_storable'] as String).toLowerCase() == 't' || (json['is_storable'] as String).toLowerCase() == 'true')
+              : false),
     );
   }
 
@@ -60,6 +67,7 @@ class Product extends Equatable implements OdooRecord {
       'uom_id': uomId != null ? [uomId!, uomName ?? ''] : null,
       'taxes_id': taxesIds.map((id) => [id, '']).toList(),
       'product_tmpl_id': productTmplId,
+      'is_storable': isStorable,
     };
   }
 
@@ -74,6 +82,7 @@ class Product extends Equatable implements OdooRecord {
     String? uomName,
     List<int>? taxesIds,
     int? productTmplId,
+    bool? isStorable,
   }) {
     return Product(
       id: id ?? this.id,
@@ -85,13 +94,14 @@ class Product extends Equatable implements OdooRecord {
       uomName: uomName ?? this.uomName,
       taxesIds: taxesIds ?? this.taxesIds,
       productTmplId: productTmplId ?? this.productTmplId,
+      isStorable: isStorable ?? this.isStorable,
     );
   }
 
   // Getters de conveniencia
-  bool get isService => type == 'service';
-  bool get isConsumable => type == 'consu';
-  bool get isStorable => type == 'product';
+  bool get isService => type == 'service' && !isStorable;
+  bool get isConsumable => type == 'consu' && !isStorable;
+  bool get isProductStorable => type == 'consu' && isStorable;
   bool get hasDefaultCode => defaultCode != null && defaultCode!.isNotEmpty;
   String get displayName => hasDefaultCode ? '[$defaultCode] $name' : name;
 
@@ -106,6 +116,7 @@ class Product extends Equatable implements OdooRecord {
         uomName,
         taxesIds,
         productTmplId,
+      isStorable,
       ];
 
   @override
@@ -122,5 +133,6 @@ class Product extends Equatable implements OdooRecord {
     'uom_id',
     'taxes_id',
     'product_tmpl_id',
+    'is_storable',
   ];
 }
