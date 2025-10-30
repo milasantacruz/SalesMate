@@ -739,6 +739,10 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         
         // Encolar para sincronización posterior
         await _callQueue.createRecord(modelName, enrichedData);
+        try {
+          final pending = await _callQueue.getPendingCount();
+          print('📦 SALE_ORDER_REPO: Cola tras encolar create ${modelName}: pendientes=$pending');
+        } catch (_) {}
         
         print('✅ SALE_ORDER_REPO: Orden guardada localmente (ID temporal: $tempId)');
         print('✅ SALE_ORDER_REPO: Orden encolada para sincronización');

@@ -42,6 +42,11 @@ class SyncCoordinatorRepository {
   /// Sincroniza todas las operaciones pendientes
   Future<SyncResult> syncAllPendingOperations() async {
     print('🔄 SYNC_COORDINATOR: Iniciando sincronización de operaciones pendientes');
+    // Log de contexto de tenant/keys
+    try {
+      final dbg = _tenantCache.getDebugInfo();
+      print('🧭 SYNC_COORDINATOR: Tenant actual=${dbg['currentTenant']}, keysTenant=${dbg['currentTenantKeys']}, totalKeys=${dbg['totalKeys']}');
+    } catch (_) {}
     
     if (!await isOnline()) {
       print('📱 SYNC_COORDINATOR: Sin conexión - cancelando sincronización');
@@ -57,7 +62,7 @@ class SyncCoordinatorRepository {
       final pendingOperations = await _queueRepository.getPendingOperations();
       final activeOperations = pendingOperations.where((op) => op.status.isActive).toList();
       
-      print('📋 SYNC_COORDINATOR: ${activeOperations.length} operaciones pendientes encontradas');
+      print('📋 SYNC_COORDINATOR: ${activeOperations.length} operaciones pendientes encontradas (total=${pendingOperations.length})');
       
       if (activeOperations.isEmpty) {
         return SyncResult(

@@ -129,7 +129,9 @@ class OdooCallQueueRepository {
 
   /// Obtiene todas las operaciones pendientes
   Future<List<PendingOperation>> getPendingOperations() async {
-    return await _queueRepository.getPendingOperations();
+    final ops = await _queueRepository.getPendingOperations();
+    print('📊 CALL_QUEUE: getPendingOperations -> total=${ops.length}, activos=${ops.where((o)=>o.status.isActive).length}');
+    return ops;
   }
 
   /// Obtiene operaciones pendientes por modelo
@@ -139,7 +141,9 @@ class OdooCallQueueRepository {
 
   /// Obtiene el número de operaciones pendientes
   Future<int> getPendingCount() async {
-    return await _queueRepository.getPendingCount();
+    final count = await _queueRepository.getPendingCount();
+    print('📊 CALL_QUEUE: getPendingCount -> $count');
+    return count;
   }
 
   /// Obtiene estadísticas de la cola

@@ -9,6 +9,10 @@ class OperationQueueRepository {
   /// Inicializa el almacenamiento de la cola
   Future<void> init() async {
     _box = await Hive.openBox<List>(_queueBox);
+    try {
+      final ops = await getPendingOperations();
+      print('📦 QUEUE_REPO: INIT abierto "$_queueBox" con ${ops.length} operaciones (pendientes=${ops.where((o)=>o.status.isActive).length})');
+    } catch (_) {}
   }
   
   /// Cierra el almacenamiento
@@ -33,9 +37,23 @@ class OperationQueueRepository {
   /// Obtiene todas las operaciones pendientes
   Future<List<PendingOperation>> getPendingOperations() async {
     try {
-      final data = _box.get('pending_operations', defaultValue: <Map<String, dynamic>>[]);
+      final data = _box.get('pending_operations', defaultValue: <dynamic>[]);
       if (data is List) {
-        return data.map((json) => PendingOperation.fromJson(json as Map<String, dynamic>)).toList();
+        final list = data
+            .map((item) {
+              try {
+                if (item is Map) {
+                  return PendingOperation.fromJson(Map<String, dynamic>.from(item));
+                }
+              } catch (e) {
+                print('⚠️ QUEUE_REPO: Error convirtiendo item de cola (${item.runtimeType}): $e');
+              }
+              return null;
+            })
+            .whereType<PendingOperation>()
+            .toList();
+        print('📥 QUEUE_REPO: CARGA getPendingOperations = ${list.length} (activos=${list.where((o)=>o.status.isActive).length})');
+        return list;
       }
       return [];
     } catch (e) {
@@ -141,6 +159,7 @@ class OperationQueueRepository {
   Future<void> _saveOperations(List<PendingOperation> operations) async {
     final jsonData = operations.map((op) => op.toJson()).toList();
     await _box.put('pending_operations', jsonData);
+    print('💾 QUEUE_REPO: SAVE pending_operations = ${operations.length} (activos=${operations.where((o)=>o.status.isActive).length})');
   }
 
   /// Obtiene operaciones por tipo
