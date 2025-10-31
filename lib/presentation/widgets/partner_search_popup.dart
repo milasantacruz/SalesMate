@@ -23,6 +23,41 @@ class PartnerSearchPopup extends StatefulWidget {
 class _PartnerSearchPopupState extends State<PartnerSearchPopup> {
   final _searchController = TextEditingController();
 
+  String _normalizeRut(String s) => s
+      .replaceAll('.', '')
+      .replaceAll('-', '')
+      .replaceAll(' ', '')
+      .toLowerCase();
+
+  String? _extractRutFromDisplay(String? display) {
+    if (display == null || display.isEmpty) return null;
+    final m = RegExp(r'(\d{1,3}(?:\.\d{3})+-[\dkK])').firstMatch(display);
+    return m?.group(1);
+  }
+
+  List<Widget> _buildRutWidgets(Partner partner) {
+    final raw = partner.vat?.isNotEmpty == true
+        ? partner.vat!
+        : (_extractRutFromDisplay(partner.displayName) ?? '');
+    if (raw.isEmpty) return const [];
+    return [
+      const SizedBox(height: 2),
+      Row(
+        children: [
+          Icon(Icons.badge, size: 14, color: Colors.grey[600]),
+          const SizedBox(width: 4),
+          Text(
+            raw,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -80,7 +115,7 @@ class _PartnerSearchPopupState extends State<PartnerSearchPopup> {
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar por nombre o email...',
+              hintText: 'Buscar por nombre, email o RUT...',
               prefixIcon: const Icon(Icons.search),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8.0),
@@ -110,9 +145,15 @@ class _PartnerSearchPopupState extends State<PartnerSearchPopup> {
                   final filteredPartners = searchTerm.isEmpty
                       ? state.partners
                       : state.partners.where((partner) {
-                          return partner.name.toLowerCase().contains(searchTerm) ||
-                                 (partner.email != null && 
-                                  partner.email!.toLowerCase().contains(searchTerm));
+                          final matchesName = partner.name.toLowerCase().contains(searchTerm);
+                          final matchesEmail = (partner.email != null && partner.email!.toLowerCase().contains(searchTerm));
+                          final matchesDisplayName = (partner.displayName != null && partner.displayName!.toLowerCase().contains(searchTerm));
+                          // Normalizar RUT para tolerar puntos y guiones
+                          final termNorm = _normalizeRut(searchTerm);
+                          final rawVat = partner.vat ?? _extractRutFromDisplay(partner.displayName);
+                          final partnerVatNorm = rawVat != null ? _normalizeRut(rawVat) : '';
+                          final matchesVat = partnerVatNorm.contains(termNorm);
+                          return matchesName || matchesEmail || matchesDisplayName || matchesVat;
                         }).toList();
 
                   if (filteredPartners.isEmpty) {
@@ -169,6 +210,7 @@ class _PartnerSearchPopupState extends State<PartnerSearchPopup> {
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                ..._buildRutWidgets(partner),
                 if (partner.email != null && partner.email!.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Row(

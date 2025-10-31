@@ -1288,6 +1288,14 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
           setState(() {
             _deliveryAddresses = cachedAddresses;
             _isLoadingAddresses = false;
+            // Seleccionar automáticamente la dirección de la orden si existe
+            final sid = _currentOrder?.partnerShippingId;
+            if (sid != null) {
+              final idx = _deliveryAddresses.indexWhere((a) => a.id == sid);
+              if (idx >= 0) {
+                _selectedShippingAddress = _deliveryAddresses[idx];
+              }
+            }
           });
         }
         return;
@@ -1301,6 +1309,14 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
         setState(() {
           _deliveryAddresses = addresses;
           _isLoadingAddresses = false;
+          // Seleccionar automáticamente la dirección de la orden si existe
+          final sid = _currentOrder?.partnerShippingId;
+          if (sid != null) {
+            final idx = _deliveryAddresses.indexWhere((a) => a.id == sid);
+            if (idx >= 0) {
+              _selectedShippingAddress = _deliveryAddresses[idx];
+            }
+          }
         });
       }
     } catch (e) {
@@ -1317,6 +1333,14 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
           setState(() {
             _deliveryAddresses = partnerAddresses;
             _isLoadingAddresses = false;
+            // Seleccionar automáticamente la dirección de la orden si existe
+            final sid = _currentOrder?.partnerShippingId;
+            if (sid != null) {
+              final idx = _deliveryAddresses.indexWhere((a) => a.id == sid);
+              if (idx >= 0) {
+                _selectedShippingAddress = _deliveryAddresses[idx];
+              }
+            }
           });
         }
       } catch (cacheError) {

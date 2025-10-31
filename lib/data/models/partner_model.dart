@@ -6,6 +6,8 @@ class Partner extends Equatable implements OdooRecord {
   const Partner({
     required this.id,
     required this.name,
+    this.vat,
+    this.displayName,
     this.email,
     this.phone,
     this.isCompany = false,
@@ -32,6 +34,8 @@ class Partner extends Equatable implements OdooRecord {
   @override
   final int id;
   final String name;
+  final String? vat;
+  final String? displayName;
   final String? email;
   final String? phone;
   final bool isCompany;
@@ -61,6 +65,8 @@ class Partner extends Equatable implements OdooRecord {
     return {
       'id': id,
       'name': name,
+      if (vat != null) 'vat': vat,
+      if (displayName != null) 'display_name': displayName,
       if (email != null) 'email': email,
       if (phone != null) 'phone': phone,
       'is_company': isCompany,
@@ -102,6 +108,8 @@ class Partner extends Equatable implements OdooRecord {
     return Partner(
       id: json['id'] as int,
       name: json['name'] is String ? json['name'] : '',
+      vat: json['vat'] is String ? json['vat'] : null,
+      displayName: json['display_name'] is String ? json['display_name'] : null,
       email: json['email'] is String ? json['email'] : null,
       phone: json['phone'] is String ? json['phone'] : null,
       isCompany: json['is_company'] as bool? ?? false,
@@ -130,6 +138,8 @@ class Partner extends Equatable implements OdooRecord {
   List<Object?> get props => [
         id,
         name,
+        vat,
+        displayName,
         email,
         phone,
         isCompany,
@@ -157,6 +167,8 @@ class Partner extends Equatable implements OdooRecord {
   static List<String> get oFields => [
         'id',
         'name',
+        'vat',
+        'display_name',
         'email',
         'phone',
         'is_company',

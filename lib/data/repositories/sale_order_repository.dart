@@ -135,10 +135,12 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     
     // Filtro por término de búsqueda
     if (_searchTerm.isNotEmpty) {
+      // OR de 3 condiciones: name, partner display_name y RUT (partner_id.vat)
       domain.addAll([
-        '|',
+        '|', '|',
         ['name', 'ilike', _searchTerm],
         ['partner_id', 'ilike', _searchTerm],
+        ['partner_id.vat', 'ilike', _searchTerm],
       ]);
     }
     
@@ -276,12 +278,34 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         .where((order) => !(order.name.startsWith('TEMP_CALC') || order.name.contains('TEMP_CALC')))
         .toList();
 
-    // Filtro por término de búsqueda
+    // Helpers para búsqueda por RUT (normalizado) y texto
+    String _normalizeRut(String s) => s
+        .replaceAll('.', '')
+        .replaceAll('-', '')
+        .replaceAll(' ', '')
+        .toLowerCase();
+    String? _extractRutFromDisplay(String? display) {
+      if (display == null || display.isEmpty) return null;
+      final m = RegExp(r'(\d{1,3}(?:\.\d{3})+-[\dkK])').firstMatch(display);
+      return m?.group(1);
+    }
+
+    // Filtro por término de búsqueda (name, partnerName y RUT normalizado)
     if (_searchTerm.isNotEmpty) {
       filteredRecords = filteredRecords.where((order) {
         final searchLower = _searchTerm.toLowerCase();
-        return order.name.toLowerCase().contains(searchLower) ||
-               (order.partnerName?.toLowerCase().contains(searchLower) ?? false);
+        final termNorm = _normalizeRut(_searchTerm);
+
+        final orderName = order.name.toLowerCase();
+        final partnerNameLower = (order.partnerName ?? '').toLowerCase();
+
+        // Extraer RUT visible desde partnerName (display_name) si existe
+        final partnerRutRaw = _extractRutFromDisplay(order.partnerName);
+        final partnerRutNorm = partnerRutRaw != null ? _normalizeRut(partnerRutRaw) : '';
+
+        final matchesText = orderName.contains(searchLower) || partnerNameLower.contains(searchLower);
+        final matchesRut = partnerRutNorm.isNotEmpty && partnerRutNorm.contains(termNorm);
+        return matchesText || matchesRut;
       }).toList();
     }
     
