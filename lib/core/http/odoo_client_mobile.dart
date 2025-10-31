@@ -2,6 +2,7 @@ import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
 
 /// Cliente HTTP personalizado que maneja cookies manualmente para Android
 class CookieClient extends http.BaseClient {
@@ -56,18 +57,14 @@ class CookieClient extends http.BaseClient {
       print('🔑 LICENSE_REQUEST: Cookies actuales: $_cookies');
     }
     
-    // 🔥 CRÍTICO: Interceptar el body del request para análisis
-    if (request is http.Request && request.body.isNotEmpty) {
-      print('📦 ANDROID: Request body: ${request.body}');
-    }
-    
     // Agregar cookies a la request
     if (_cookies.isNotEmpty) {
       final cookieHeader = _cookies.entries
           .map((e) => '${e.key}=${e.value}')
           .join('; ');
       request.headers['Cookie'] = cookieHeader;
-      print('🍪 ANDROID: Enviando cookies: $cookieHeader');
+      // 🚫 LOGS COMENTADOS: Generan demasiado ruido
+      // print('🍪 ANDROID: Enviando cookies: $cookieHeader');
       
       // 🔍 DEBUG FASE 1: Verificar si las cookies interfieren con LicenseService
       if (request.url.toString().contains('app.proandsys.net')) {
@@ -76,7 +73,8 @@ class CookieClient extends http.BaseClient {
         print('🔑 LICENSE_REQUEST: Esto podría causar el error 401');
       }
     } else {
-      print('🍪 ANDROID: No hay cookies para enviar');
+      // 🚫 LOG COMENTADO: Genera demasiado ruido
+      // print('🍪 ANDROID: No hay cookies para enviar');
       
       // 🔍 DEBUG FASE 1: Confirmar que no hay cookies para LicenseService
       if (request.url.toString().contains('app.proandsys.net')) {
@@ -85,13 +83,15 @@ class CookieClient extends http.BaseClient {
     }
 
     try {
-      print('⏳ ANDROID: Enviando request a: ${request.url}');
-      print('⏳ ANDROID: Path: ${request.url.path}');
-      print('⏳ ANDROID: Es call_kw?: ${request.url.path.contains('call_kw')}');
+      // 🚫 LOGS COMENTADOS: Generan demasiado ruido
+      // print('⏳ ANDROID: Enviando request a: ${request.url}');
+      // print('⏳ ANDROID: Path: ${request.url.path}');
+      // print('⏳ ANDROID: Es call_kw?: ${request.url.path.contains('call_kw')}');
       
       final response = await _inner.send(request);
-      print('✅ ANDROID: Response recibida - Status: ${response.statusCode}');
-      print('✅ ANDROID: Content-Type: ${response.headers['content-type']}');
+      // 🚫 LOGS COMENTADOS: Generan demasiado ruido
+      // print('✅ ANDROID: Response recibida - Status: ${response.statusCode}');
+      // print('✅ ANDROID: Content-Type: ${response.headers['content-type']}');
       
       // 🔍 DEBUG FASE 1: Logs específicos para LicenseService
       if (request.url.toString().contains('app.proandsys.net')) {
@@ -104,14 +104,8 @@ class CookieClient extends http.BaseClient {
         }
       }
       
-      // Log especial para llamadas a call_kw
+      // 🔍 VERIFICAR SI ES HTML (solo para call_kw)
       if (request.url.path.contains('call_kw')) {
-        print('🎯 ANDROID: Esta es una llamada call_kw');
-        print('🎯 ANDROID: URL completa: ${request.url}');
-        print('🎯 ANDROID: Status code: ${response.statusCode}');
-        print('🎯 ANDROID: Content-Type: ${response.headers['content-type']}');
-        
-        // 🔍 VERIFICAR SI ES HTML
         final contentType = response.headers['content-type'] ?? '';
         if (contentType.contains('text/html')) {
           print('⚠️ ANDROID: RESPUESTA ES HTML, NO JSON!');
@@ -141,55 +135,103 @@ class CookieClient extends http.BaseClient {
           );
         }
         
-        // 🔥 CRÍTICO: Ver el payload exacto de call_kw
-        if (request is http.Request && request.body.isNotEmpty) {
-          print('🎯 ANDROID: PAYLOAD CALL_KW: ${request.body}');
-          print('🎯 ANDROID: PAYLOAD LENGTH: ${request.body.length} chars');
+        // 🔍 DEBUG: Capturar respuesta completa para call_kw (solo si contiene TypeError)
+        if (request.url.path.contains('call_kw')) {
+          try {
+            // Leer el stream completo (lo consumimos)
+            final bytes = await response.stream.toList();
+            final allBytes = bytes.expand((x) => x).toList();
+            final responseBody = utf8.decode(allBytes);
+            
+            // Si contiene TypeError, mostrar debug completo
+            if (responseBody.contains('TypeError')) {
+              try {
+                final jsonResponse = jsonDecode(responseBody);
+                if (jsonResponse is Map && jsonResponse.containsKey('error')) {
+                  final error = jsonResponse['error'];
+                  if (error is Map && error.containsKey('data')) {
+                    final errorData = error['data'];
+                    if (errorData is Map && errorData.containsKey('debug')) {
+                      final debugStr = errorData['debug'].toString();
+                      print('❌ ANDROID: ========== ERROR DEBUG (TypeError) ==========');
+                      // Imprimir línea por línea para evitar truncamiento
+                      final debugLines = debugStr.split('\n');
+                      for (int i = 0; i < debugLines.length; i++) {
+                        print('❌ ANDROID: ${debugLines[i]}');
+                      }
+                      print('❌ ANDROID: ===========================================');
+                    }
+                    if (errorData is Map && errorData.containsKey('name')) {
+                      print('❌ ANDROID: Error name: ${errorData['name']}');
+                    }
+                    if (errorData is Map && errorData.containsKey('message')) {
+                      print('❌ ANDROID: Error message: ${errorData['message']}');
+                    }
+                  }
+                }
+              } catch (parseError) {
+                print('⚠️ ANDROID: Error parseando JSON de respuesta: $parseError');
+              }
+            }
+            
+            // SIEMPRE recrear el stream porque lo consumimos
+            final newResponse = http.StreamedResponse(
+              Stream.fromIterable([allBytes]),
+              response.statusCode,
+              contentLength: allBytes.length,
+              request: response.request,
+              headers: response.headers,
+              isRedirect: response.isRedirect,
+              persistentConnection: response.persistentConnection,
+              reasonPhrase: response.reasonPhrase,
+            );
+            
+            // Extraer cookies antes de devolver
+            final setCookie = newResponse.headers['set-cookie'];
+            if (setCookie != null) {
+              // 🚫 LOG COMENTADO: Genera demasiado ruido
+              // print('🍪 ANDROID: Recibidas cookies: $setCookie');
+              _parseCookies(setCookie);
+            } else {
+              // 🚫 LOG COMENTADO: Genera demasiado ruido
+              // print('🍪 ANDROID: No se recibieron cookies en la response');
+            }
+            
+            return newResponse;
+          } catch (e) {
+            print('⚠️ ANDROID: Error leyendo response body para debug: $e');
+          }
         }
-        
-        // COMENTADO: El logging del body ya no es necesario y causa errores con respuestas grandes.
-        /*
-        // Leer el cuerpo de la response para debug
-        final responseBody = await response.stream.bytesToString();
-        print('🎯 ANDROID: Response body: $responseBody');
-        
-        // Recrear el stream para que la response funcione normalmente
-        final newResponse = http.StreamedResponse(
-          Stream.fromIterable([responseBody.codeUnits]),
-          response.statusCode,
-          contentLength: responseBody.length,
-          request: response.request,
-          headers: response.headers,
-          isRedirect: response.isRedirect,
-          persistentConnection: response.persistentConnection,
-          reasonPhrase: response.reasonPhrase,
-        );
-        */
         
         // Extraer y guardar cookies de la response
         final setCookie = response.headers['set-cookie'];
         if (setCookie != null) {
-          print('🍪 ANDROID: Recibidas cookies: $setCookie');
+          // 🚫 LOG COMENTADO: Genera demasiado ruido
+          // print('🍪 ANDROID: Recibidas cookies: $setCookie');
           _parseCookies(setCookie);
         } else {
-          print('🍪 ANDROID: No se recibieron cookies en la response');
+          // 🚫 LOG COMENTADO: Genera demasiado ruido
+          // print('🍪 ANDROID: No se recibieron cookies en la response');
         }
         
         return response; // Devolvemos la respuesta original sin tocarla
       } else {
         // Para otras requests, manejo normal
-        print('🔍 ANDROID: Request no es call_kw - Path: ${request.url.path}');
-        if (request is http.Request && request.body.isNotEmpty) {
-          print('🔍 ANDROID: OTHER REQUEST PAYLOAD: ${request.body}');
-        }
+        // 🚫 LOGS COMENTADOS: Generan demasiado ruido
+        // print('🔍 ANDROID: Request no es call_kw - Path: ${request.url.path}');
+        // if (request is http.Request && request.body.isNotEmpty) {
+        //   print('🔍 ANDROID: OTHER REQUEST PAYLOAD: ${request.body}');
+        // }
         
         // Extraer y guardar cookies de la response
         final setCookie = response.headers['set-cookie'];
         if (setCookie != null) {
-          print('🍪 ANDROID: Recibidas cookies: $setCookie');
+          // 🚫 LOG COMENTADO: Genera demasiado ruido
+          // print('🍪 ANDROID: Recibidas cookies: $setCookie');
           _parseCookies(setCookie);
         } else {
-          print('🍪 ANDROID: No se recibieron cookies en la response');
+          // 🚫 LOG COMENTADO: Genera demasiado ruido
+          // print('🍪 ANDROID: No se recibieron cookies en la response');
         }
 
         return response;

@@ -118,10 +118,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             },
           ),
           // Botón de búsqueda
-          IconButton(
+          /*IconButton(
             icon: const Icon(Icons.search),
             onPressed: _showSearchDialog,
-          ),
+          ),*/
           // Botón de prueba offline
           IconButton(
             icon: const Icon(Icons.offline_bolt, color: Color.fromARGB(255, 255, 56, 152)),
@@ -136,7 +136,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             tooltip: 'Probar funcionalidad offline',
           ),
           // Menú de filtros
-          PopupMenuButton<String>(
+          /*PopupMenuButton<String>(
             icon: const Icon(Icons.filter_list),
             onSelected: _handleFilterSelection,
             itemBuilder: (context) => [
@@ -217,7 +217,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
             ],
-          ),
+          ),*/
           // Menú de usuario
           BlocBuilder<AuthBloc, AuthState>(
             builder: (context, state) {
@@ -321,7 +321,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   /// Muestra el diálogo de búsqueda
-  void _showSearchDialog() {
+  /*void _showSearchDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -387,7 +387,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ],
       ),
     );
-  }
+  }*/
 
   /// Muestra el diálogo para crear un nuevo partner
   void _showCreatePartnerDialog() {

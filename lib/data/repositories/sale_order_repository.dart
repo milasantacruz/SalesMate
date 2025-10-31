@@ -133,6 +133,20 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   List<dynamic> _buildDomain() {
     final domain = <dynamic>[];
     
+    // ✅ Filtro temporal: solo órdenes de los últimos 6 meses
+    final temporalDomain = TenantStorageConfig.getSaleOrdersDateDomain();
+    if (temporalDomain.isNotEmpty) {
+      domain.addAll(temporalDomain);
+      final filterDate = TenantStorageConfig.getSaleOrdersFilterDate();
+      if (filterDate != null) {
+        print('📅 SALE_ORDER_REPO: Filtro temporal aplicado: últimos ${TenantStorageConfig.saleOrdersMonthsBack} meses (desde ${filterDate.toLocal()})');
+      }
+    }
+    
+    // ✅ Excluir órdenes temporales de cálculo (TEMP_CALC) desde el servidor
+    domain.add('!');
+    domain.add(['name', '=like', 'TEMP_CALC%']);
+    
     // Filtro por término de búsqueda
     if (_searchTerm.isNotEmpty) {
       // OR de 3 condiciones: name, partner display_name y RUT (partner_id.vat)
@@ -149,8 +163,6 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       domain.add(['state', '=', _state]);
     }
     
-    // Si no hay filtros, devolver dominio vacío para obtener todas las órdenes
-    // Si hay filtros, devolver el dominio construido
     return domain;
   }
 
@@ -273,10 +285,16 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   List<SaleOrder> _applyLocalFilters(List<SaleOrder> allRecords) {
     var filteredRecords = allRecords;
     
-    // Excluir órdenes temporales de cálculo (debug)
+    // Excluir órdenes temporales de cálculo (solo las que empiezan con TEMP_CALC)
+    final beforeFilter = filteredRecords.length;
+    final tempCalcOrders = filteredRecords.where((order) => order.name.startsWith('TEMP_CALC')).toList();
     filteredRecords = filteredRecords
-        .where((order) => !(order.name.startsWith('TEMP_CALC') || order.name.contains('TEMP_CALC')))
+        .where((order) => !order.name.startsWith('TEMP_CALC'))
         .toList();
+    print('🔍 SALE_ORDER_REPO: Filtro TEMP_CALC - Total: $beforeFilter, TEMP_CALC: ${tempCalcOrders.length}, Restantes: ${filteredRecords.length}');
+    if (tempCalcOrders.isNotEmpty && tempCalcOrders.length <= 5) {
+      print('🔍 SALE_ORDER_REPO: Órdenes TEMP_CALC filtradas: ${tempCalcOrders.map((o) => o.name).join(", ")}');
+    }
 
     // Helpers para búsqueda por RUT (normalizado) y texto
     String _normalizeRut(String s) => s
@@ -1360,15 +1378,27 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   }
 
   /// Actualiza una orden de venta existente
-  Future<bool> updateOrder(int orderId, Map<String, dynamic> orderData) async {
+    Future<bool> updateOrder(int orderId, Map<String, dynamic> orderData) async {
     try {
       print('🛒 SALE_ORDER_REPO: Actualizando orden $orderId...');
-      print('🛒 SALE_ORDER_REPO: Order data original: $orderData');
       
       // Enriquecer datos con auditoría
       final enrichedData = _enrichOrderDataForWrite(orderData);
-      print('🛒 SALE_REPO: Order data enriquecida: $enrichedData');
       
+      // Verificar conectividad para aplicar patrón Local-First
+      try {
+        final state = await netConn.checkNetConn();
+        print('🌐 DIAG_WRITE updateOrder net=${state.name}');
+        if (state != netConnState.online) {
+          // Modo offline: encolar operación y aplicar cambios localmente
+          await _callQueue.updateRecord(modelName, orderId, enrichedData);
+          await _applyLocalOrderUpdate(orderId, enrichedData);
+          print('✅ SALE_ORDER_REPO: Orden $orderId actualizada localmente (offline)');
+          return true;
+        }
+      } catch (_) {}
+      
+      // Modo online: ejecutar operación en servidor
       // Si se está intentando cambiar el estado a 'sale', usar action_confirm
       if (enrichedData['state'] == 'sale') {
         print('🛒 SALE_ORDER_REPO: Cambiando estado a sale, usando action_confirm...');
@@ -1382,6 +1412,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
             'model': modelName,
             'method': 'write',
             'args': [[orderId], otherData],
+            'kwargs': {},
           });
           print('🛒 SALE_ORDER_REPO: Otros campos actualizados antes de confirmar');
         }
@@ -1397,20 +1428,43 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         print('✅ SALE_ORDER_REPO: Orden $orderId confirmada exitosamente');
       } else {
         // Para otros cambios, usar write normal con datos enriquecidos
-        print('🛒 SALE_ORDER_REPO: Llamando write con orderId: $orderId');
-        print('🛒 SALE_ORDER_REPO: Enriched data: $enrichedData');
-        print('🛒 SALE_ORDER_REPO: Usando cliente: ${env.orpc.runtimeType}');
-        
         try {
           await env.orpc.callKw({
             'model': modelName,
             'method': 'write',
             'args': [[orderId], enrichedData],
+            'kwargs': {},
           });
           print('🛒 SALE_ORDER_REPO: Write completado exitosamente');
         } catch (e) {
           print('❌ SALE_ORDER_REPO: Error en callKw: $e');
           print('❌ SALE_ORDER_REPO: Tipo de error: ${e.runtimeType}');
+          
+          // Intentar extraer más detalles del error de Odoo
+          if (e is OdooException) {
+            try {
+              print('❌ SALE_ORDER_REPO: Error message: ${e.message}');
+              print('❌ SALE_ORDER_REPO: Error toString completo: ${e.toString()}');
+              
+              // Intentar parsear el mensaje si contiene información estructurada
+              final errorStr = e.toString();
+              if (errorStr.contains('debug')) {
+                try {
+                  // Intentar extraer el debug del string
+                  final debugMatch = RegExp(r'debug[:\s]+(Traceback[^\}]+)', multiLine: true).firstMatch(errorStr);
+                  if (debugMatch != null) {
+                    print('❌ SALE_ORDER_REPO: ========== ERROR DEBUG COMPLETO ==========');
+                    print(debugMatch.group(1) ?? 'No se pudo extraer debug');
+                    print('❌ SALE_ORDER_REPO: ===========================================');
+                  }
+                } catch (parseError) {
+                  print('⚠️ SALE_ORDER_REPO: Error extrayendo debug: $parseError');
+                }
+              }
+            } catch (logError) {
+              print('⚠️ SALE_ORDER_REPO: Error al extraer detalles: $logError');
+            }
+          }
           rethrow;
         }
         
@@ -1636,6 +1690,64 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
         }
       }
     } catch (_) {}
+  }
+
+  /// Aplica cambios localmente a una orden (para modo offline)
+  Future<void> _applyLocalOrderUpdate(int orderId, Map<String, dynamic> orderData) async {
+    try {
+      final idx = latestRecords.indexWhere((o) => o.id == orderId);
+      if (idx >= 0) {
+        final order = latestRecords[idx];
+        
+        // Actualizar campos según orderData
+        int? partnerShippingId = order.partnerShippingId;
+        String? partnerShippingName = order.partnerShippingName;
+        String? state = order.state;
+        String? name = order.name;
+        
+        // Extraer partner_shipping_id
+        if (orderData.containsKey('partner_shipping_id')) {
+          final shippingIdValue = orderData['partner_shipping_id'];
+          if (shippingIdValue is int) {
+            partnerShippingId = shippingIdValue;
+          } else if (shippingIdValue is List && shippingIdValue.isNotEmpty) {
+            partnerShippingId = (shippingIdValue[0] as num?)?.toInt();
+            if (shippingIdValue.length > 1 && shippingIdValue[1] is String) {
+              partnerShippingName = shippingIdValue[1] as String;
+            }
+          }
+        }
+        
+        // Extraer partner_shipping_name si viene separado
+        if (orderData.containsKey('partner_shipping_name')) {
+          partnerShippingName = orderData['partner_shipping_name'] as String?;
+        }
+        
+        // Extraer state
+        if (orderData.containsKey('state')) {
+          state = orderData['state'] as String?;
+        }
+        
+        // Extraer name
+        if (orderData.containsKey('name')) {
+          name = orderData['name'] as String?;
+        }
+        
+        // Crear orden actualizada
+        final updated = order.copyWith(
+          partnerShippingId: partnerShippingId,
+          partnerShippingName: partnerShippingName,
+          state: state,
+          name: name,
+        );
+        
+        latestRecords[idx] = updated;
+        await _persistLatestRecords();
+        print('✅ SALE_ORDER_REPO: Orden $orderId actualizada localmente');
+      }
+    } catch (e) {
+      print('⚠️ SALE_ORDER_REPO: Error aplicando actualización local: $e');
+    }
   }
 
   Future<void> _persistLatestRecords() async {

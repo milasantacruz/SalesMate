@@ -755,6 +755,44 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     }
     
     try {
+      // 0. ACTUALIZAR dirección de despacho PRIMERO (antes de las líneas)
+      final currentShippingId = _currentOrder?.partnerShippingId;
+      final newShippingId = _selectedShippingAddress?.id;
+      bool addressUpdateSuccess = true;
+      String? addressUpdateError;
+      
+      if (newShippingId != null && newShippingId != currentShippingId) {
+        print('💾 ACTUALIZANDO dirección de despacho PRIMERO: $currentShippingId -> $newShippingId');
+        
+        // Verificar si el estado de la orden permite cambiar la dirección
+        final orderState = _currentOrder?.state;
+        if (orderState == 'done' || orderState == 'cancel') {
+          addressUpdateSuccess = false;
+          addressUpdateError = 'No se puede cambiar la dirección en órdenes ${orderState == 'done' ? 'entregadas' : 'canceladas'}';
+          print('⚠️ Estado de orden ($orderState) no permite cambiar dirección');
+        } else {
+          try {
+            await _updateOrderShippingAddress(newShippingId);
+            print('✅ Dirección de despacho actualizada exitosamente');
+          } catch (e) {
+            addressUpdateSuccess = false;
+            addressUpdateError = e.toString();
+            print('❌ Error actualizando dirección de despacho: $e');
+          }
+        }
+      } else if (newShippingId == null && currentShippingId != null) {
+        // Si se removió la dirección (seleccionó "usar dirección del cliente")
+        print('💾 REMOVIENDO dirección de despacho (usando dirección del cliente)');
+        try {
+          await _updateOrderShippingAddress(_currentOrder!.partnerId!);
+          print('✅ Dirección de despacho removida (usando dirección del cliente)');
+        } catch (e) {
+          addressUpdateSuccess = false;
+          addressUpdateError = e.toString();
+          print('❌ Error removiendo dirección de despacho: $e');
+        }
+      }
+
       // 1. ELIMINAR líneas que ya no están en _orderLines
       for (final originalLine in originalLines) {
         if (originalLine.id == null) {
@@ -817,13 +855,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
         }
       }
       
-      // 3. ACTUALIZAR dirección de despacho si es necesario
-      if (_selectedShippingAddress != null) {
-        print('💾 ACTUALIZANDO dirección de despacho: ${_selectedShippingAddress!.id}');
-        await _updateOrderShippingAddress(_selectedShippingAddress!.id);
-      }
-      
-      // Recargar la orden para obtener los datos actualizados
+      // 3. Recargar la orden para obtener los datos actualizados
       print('🔄 Recargando orden después de actualizaciones...');
       context.read<SaleOrderBloc>().add(LoadSaleOrderById(orderId: _currentOrder!.id));
       // Salir de modo edición para permitir el cálculo de totales
@@ -836,14 +868,25 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
       print('🔄 Refrescando lista de órdenes tras guardar...');
       context.read<SaleOrderBloc>().add(RefreshSaleOrders());
       
-      // Mostrar mensaje de éxito
+      // Mostrar mensaje apropiado
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Orden actualizada exitosamente'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (addressUpdateSuccess) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Orden actualizada exitosamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          // Mostrar advertencia si falló la actualización de dirección
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Orden guardada, pero la dirección de despacho no se pudo actualizar: ${addressUpdateError?.substring(0, 100) ?? 'Error desconocido'}'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
         // Cerrar la vista de orden tras guardar
         Navigator.of(context).pop();
       }
