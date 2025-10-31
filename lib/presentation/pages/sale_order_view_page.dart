@@ -79,32 +79,12 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
         title: Text(_currentOrder?.name ?? 'Cargando...'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          if (_currentOrder != null) ...[
+          if (_currentOrder != null)
             IconButton(
-              icon: Icon(_isEditing ? Icons.save : Icons.edit),
-              onPressed: _isEditing ? _saveOrder : _toggleEdit,
-              tooltip: _isEditing ? 'Guardar cambios' : 'Editar orden',
+              icon: Icon(_isEditing ? Icons.close : Icons.edit),
+              onPressed: _toggleEdit,
+              tooltip: _isEditing ? 'Cancelar edición' : 'Editar orden',
             ),
-            if (_currentOrder!.state == 'draft') ...[
-              IconButton(
-                icon: const Icon(Icons.send),
-                onPressed: _sendQuotation,
-                tooltip: 'Enviar cotización',
-              ),
-              IconButton(
-                icon: const Icon(Icons.check),
-                onPressed: _confirmOrder,
-                tooltip: 'Confirmar orden',
-              ),
-            ],
-            if (_currentOrder!.state == 'sent') ...[
-              IconButton(
-                icon: const Icon(Icons.check),
-                onPressed: _confirmOrder,
-                tooltip: 'Confirmar orden',
-              ),
-            ],
-          ],
         ],
       ),
       body: BlocConsumer<SaleOrderBloc, SaleOrderState>(
@@ -215,30 +195,119 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             );
           }
           
-          return _buildOrderContent();
+          return Stack(
+            children: [
+              _buildOrderContent(),
+              // Menú inferior solo en modo edición
+              if (_isEditing)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: _buildBottomActionMenu(),
+                ),
+            ],
+          );
         },
       ),
     );
   }
 
   Widget _buildOrderContent() {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          // Información de la orden
-          _buildOrderInfo(),
-          
-          // Líneas de la orden
-          _buildOrderLines(),
-          
-          // Totales
-          if (_orderLines.isNotEmpty && _currentOrder?.partnerId != null)
-            OrderTotalsWidget(
-              partnerId: _currentOrder!.partnerId!,
-              orderLines: _orderLines,
-              isEditing: _isEditing,
+    return Padding(
+      padding: EdgeInsets.only(bottom: _isEditing ? 100 : 0),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Información de la orden
+            _buildOrderInfo(),
+            
+            // Líneas de la orden
+            _buildOrderLines(),
+            
+            // Totales
+            if (_orderLines.isNotEmpty && _currentOrder?.partnerId != null)
+              OrderTotalsWidget(
+                partnerId: _currentOrder!.partnerId!,
+                orderLines: _orderLines,
+                isEditing: _isEditing,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomActionMenu() {
+    return Builder(
+      builder: (innerContext) => Container(
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: Theme.of(innerContext).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, -2),
             ),
-        ],
+          ],
+        ),
+        child: SafeArea(
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: _showProductSearch,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.shopping_cart_outlined, size: 28),
+                      const SizedBox(height: 4),
+                      const Text('Productos'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InkWell(
+                  onTap: _saveOrder,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.save, size: 28),
+                      const SizedBox(height: 4),
+                      const Text('Guardar'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InkWell(
+                  onTap: (_currentOrder?.state == 'draft' || _currentOrder?.state == 'sent') 
+                      ? _sendQuotation 
+                      : null,
+                  child: Opacity(
+                    opacity: (_currentOrder?.state == 'draft' || _currentOrder?.state == 'sent') ? 1.0 : 0.5,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.send, size: 28),
+                        const SizedBox(height: 4),
+                        const Text('Enviar'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -653,7 +722,15 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
 
   void _toggleEdit() {
     setState(() {
-      _isEditing = !_isEditing;
+      if (_isEditing) {
+        // Cancelar edición: restaurar líneas originales
+        _orderLines = List<SaleOrderLine>.from(_originalOrderLines);
+        _initializeQuantityControllers();
+        _isEditing = false;
+      } else {
+        // Entrar en modo edición
+        _isEditing = true;
+      }
     });
   }
 
