@@ -115,7 +115,7 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
                   Row(
                     children: [
                       Text(
-                        '\$${widget.product.listPrice.toStringAsFixed(2)}',
+                        '\$${_formatPrice(widget.product.listPrice)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.green,
@@ -220,6 +220,8 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
     ));
   }
 
+  /// Formatea un número como moneda chilena con puntos de mil
+  /// Ejemplo: 124368 -> "$124.368"
   String _fmtCurrency(num value) {
     int n = value.round();
     final s = n.toString();
@@ -231,7 +233,23 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
       if (count % 3 == 0 && i != 0) sb.write('.');
     }
     final rev = sb.toString().split('').reversed.join();
-    return '\u00024$rev';
+    return '\$$rev';
+  }
+
+  /// Formatea el precio unitario con formato de miles (sin decimales)
+  /// Ejemplo: 31092.0 -> "31.092"
+  String _formatPrice(double price) {
+    int n = price.round();
+    final s = n.toString();
+    final sb = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      sb.write(s[i]);
+      count++;
+      if (count % 3 == 0 && i != 0) sb.write('.');
+    }
+    final rev = sb.toString().split('').reversed.join();
+    return rev;
   }
 
   void _showRemoveOptions(BuildContext context) {

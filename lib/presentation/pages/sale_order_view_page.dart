@@ -36,6 +36,8 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
   List<SaleOrderLine> _originalOrderLines = []; // Copia de las líneas originales
   bool _isEditing = false;
   bool _auditInfoExpanded = false; // Estado para auditoría desplegable
+  /// Formatea un número como moneda chilena con puntos de mil
+  /// Ejemplo: 124368 -> "$124.368"
   String _fmtCurrency(num value) {
     int n = value.round();
     final s = n.toString();
@@ -47,7 +49,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
       if (count % 3 == 0 && i != 0) sb.write('.');
     }
     final rev = sb.toString().split('').reversed.join();
-    return ' 4$rev';
+    return '\$$rev';
   }
   
   // Variables para edición
@@ -1241,7 +1243,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             if (_currentOrder!.partnerName != null)
               Text('Cliente: ${_currentOrder!.partnerName}'),
             Text('Productos: ${_orderLines.length}'),
-            Text('Total: \$${_currentOrder!.amountTotal.toStringAsFixed(2)}'),
+            Text('Total: ${_fmtCurrency(_currentOrder!.amountTotal)}'),
             const SizedBox(height: 8),
             const Text(
               'Se enviará por email al cliente.',
@@ -1304,7 +1306,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             if (_currentOrder!.partnerName != null)
               Text('Cliente: ${_currentOrder!.partnerName}'),
             Text('Productos: ${_orderLines.length}'),
-            Text('Total: \$${_currentOrder!.amountTotal.toStringAsFixed(2)}'),
+            Text('Total: ${_fmtCurrency(_currentOrder!.amountTotal)}'),
           ],
         ),
         actions: [
