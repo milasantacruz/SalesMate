@@ -239,15 +239,31 @@ class _ProductAddonWidgetState extends State<ProductAddonWidget> {
   /// Formatea el precio unitario con formato de miles (sin decimales)
   /// Ejemplo: 31092.0 -> "31.092"
   String _formatPrice(double price) {
-    int n = price.round();
+    // Validar que el precio sea un número válido
+    if (price.isNaN || price.isInfinite || price < 0) {
+      return '0';
+    }
+    
+    // Redondear a entero y convertir a string (sin decimales)
+    final int n = price.round();
     final s = n.toString();
+    
+    // Si el string está vacío, retornar "0"
+    if (s.isEmpty) return '0';
+    
+    // Construir el string con puntos de mil desde el final
     final sb = StringBuffer();
     int count = 0;
     for (int i = s.length - 1; i >= 0; i--) {
       sb.write(s[i]);
       count++;
-      if (count % 3 == 0 && i != 0) sb.write('.');
+      // Agregar punto cada 3 dígitos, excepto al inicio
+      if (count % 3 == 0 && i != 0) {
+        sb.write('.');
+      }
     }
+    
+    // Invertir el string resultante para obtener el formato correcto
     final rev = sb.toString().split('').reversed.join();
     return rev;
   }
