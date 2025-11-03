@@ -107973,9 +107973,15 @@ return A.tt(m,A.dt(new A.aP(B.bL,A.bc(A.b([k,A.bJ(A.aD(A.b([s,B.ap,A.aD(A.b([j,o
 amD(a){var s,r,q,p=B.f.j(B.e.aN(a))
 for(s=p.length-1,r=0,q="";s>=0;--s){q+=p[s];++r
 if(r%3===0&&s!==0)q+="."}return"$"+new A.cs(A.b((q.charCodeAt(0)==0?q:q).split(""),t.s),t.Rr).iU(0)},
-ae0(a){var s,r,q,p=B.f.j(B.e.aN(a))
-for(s=p.length-1,r=0,q="";s>=0;--s){q+=p[s];++r
-if(r%3===0&&s!==0)q+="."}return new A.cs(A.b((q.charCodeAt(0)==0?q:q).split(""),t.s),t.Rr).iU(0)},
+ae0(a){var s,r,q,p
+if(!isNaN(a))s=a==1/0||a==-1/0||a<0
+else s=!0
+if(s)return"0"
+r=B.f.j(B.e.aN(a))
+s=r.length
+if(s===0)return"0"
+for(q=s-1,p=0,s="";q>=0;--q){s+=r[q];++p
+if(p%3===0&&q!==0)s+="."}return new A.cs(A.b((s.charCodeAt(0)==0?s:s).split(""),t.s),t.Rr).iU(0)},
 apa(a){A.r6(null,new A.aDj(this,a),a,!0,!0,!1,!1,t.z)}}
 A.aDg.prototype={
 $0(){},
