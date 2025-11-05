@@ -43,11 +43,13 @@ class TaxGroup extends Equatable {
   final String name;
   final double amount;
   final double base;
+  final double? percentage; // Porcentaje del impuesto (null si es fijo)
   
   const TaxGroup({
     required this.name,
     required this.amount,
     required this.base,
+    this.percentage,
   });
   
   factory TaxGroup.fromJson(Map<String, dynamic> json) {
@@ -55,6 +57,7 @@ class TaxGroup extends Equatable {
       name: json['name'] ?? '',
       amount: (json['amount'] ?? 0.0).toDouble(),
       base: (json['base'] ?? 0.0).toDouble(),
+      percentage: json['percentage'] != null ? (json['percentage'] as num).toDouble() : null,
     );
   }
   
@@ -63,9 +66,10 @@ class TaxGroup extends Equatable {
       'name': name,
       'amount': amount,
       'base': base,
+      'percentage': percentage,
     };
   }
   
   @override
-  List<Object> get props => [name, amount, base];
+  List<Object?> get props => [name, amount, base, percentage];
 }

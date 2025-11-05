@@ -6,6 +6,9 @@ import '../../data/models/order_totals_model.dart';
 import '../bloc/sale_order/sale_order_bloc.dart';
 import '../bloc/sale_order/sale_order_event.dart';
 import '../bloc/sale_order/sale_order_state.dart';
+import '../../core/di/injection_container.dart';
+import '../../core/services/order_totals_calculation_service.dart';
+import '../../core/cache/custom_odoo_kv.dart';
 
 class OrderTotalsWidget extends StatefulWidget {
   final int partnerId;
@@ -37,7 +40,7 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
       if (count % 3 == 0 && i != 0) sb.write('.');
     }
     final rev = sb.toString().split('').reversed.join();
-    return ' 4$rev';
+    return '\$$rev';
   }
   
   Widget _buildRow(BuildContext context, String label, double amount, {bool isTotal = false}) {
@@ -66,6 +69,14 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
         ],
       ),
     );
+  }
+  
+  /// Formatea el nombre del impuesto con su porcentaje
+  String _formatTaxLabel(TaxGroup group) {
+    if (group.percentage != null) {
+      return '${group.name} (${group.percentage!.toStringAsFixed(0)}%):';
+    }
+    return '${group.name}:';
   }
   
   @override
@@ -182,7 +193,7 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
   
   @override
   Widget build(BuildContext context) {
-    // Mientras se edita, mostramos un cálculo local inmediato para evitar el loop de loading
+    // Mientras se edita, mostramos un cálculo local inmediato con impuestos reales
     if (widget.isEditing) {
       final localTotals = _calculateLocalTotals(widget.orderLines);
       return Card(
@@ -197,13 +208,35 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
               ),
               const SizedBox(height: 16),
               _buildRow(context, 'Subtotal:', localTotals.amountUntaxed),
-              // Mostrar impuestos estimados como 0 durante edición
-              _buildRow(context, 'Impuestos (estimado):', 0.0),
+              // Mostrar impuestos calculados desde cache
+              Builder(
+                builder: (context) {
+                  print('🔍 ORDER_TOTALS_WIDGET (modo edición): taxGroups.length = ${localTotals.taxGroups.length}');
+                  print('🔍 ORDER_TOTALS_WIDGET (modo edición): amountTax = ${localTotals.amountTax}');
+                  if (localTotals.taxGroups.isNotEmpty) {
+                    print('🔍 ORDER_TOTALS_WIDGET (modo edición): Mostrando ${localTotals.taxGroups.length} grupos de impuestos');
+                    for (final group in localTotals.taxGroups) {
+                      print('🔍 ORDER_TOTALS_WIDGET (modo edición): - ${group.name}: ${group.amount} (${group.percentage}%)');
+                    }
+                    return Column(
+                      children: localTotals.taxGroups.map((group) => 
+                        _buildRow(context, _formatTaxLabel(group), group.amount)
+                      ).toList(),
+                    );
+                  } else if (localTotals.amountTax > 0) {
+                    print('⚠️ ORDER_TOTALS_WIDGET (modo edición): No hay taxGroups, pero amountTax > 0, mostrando línea genérica');
+                    return _buildRow(context, 'Impuestos:', localTotals.amountTax);
+                  } else {
+                    print('⚠️ ORDER_TOTALS_WIDGET (modo edición): No hay taxGroups ni amountTax');
+                    return const SizedBox.shrink();
+                  }
+                },
+              ),
               const Divider(),
               _buildRow(context, 'Total:', localTotals.amountTotal, isTotal: true),
               const SizedBox(height: 6),
               Text(
-                'Los impuestos definitivos se calculan al guardar.',
+                'Calculado localmente. Los valores finales pueden ajustarse al sincronizar.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
               ),
             ],
@@ -233,25 +266,85 @@ class _OrderTotalsWidgetState extends State<OrderTotalsWidget> {
     );
   }
 
-  // Cálculo local de totales para modo edición (sin llamadas a servidor)
+  // Cálculo local de totales para modo edición usando el servicio de cálculo
+  // Calcula impuestos reales desde cache sin bloquear UI
   OrderTotals _calculateLocalTotals(List<SaleOrderLine> lines) {
-    double amountUntaxed = 0.0;
+    print('🔍 ORDER_TOTALS_WIDGET: _calculateLocalTotals iniciado con ${lines.length} líneas');
     for (final line in lines) {
-      final subtotal = line.priceSubtotal.toDouble();
-      if (subtotal > 0) {
-        amountUntaxed += subtotal;
-      } else {
-        final qty = (line.quantity).toDouble();
-        final unit = (line.priceUnit).toDouble();
-        amountUntaxed += qty * unit;
-      }
+      print('🔍 ORDER_TOTALS_WIDGET: Línea ${line.productName} - taxesIds: ${line.taxesIds}');
     }
-    return OrderTotals(
-      amountUntaxed: amountUntaxed,
-      amountTax: 0.0,
-      amountTotal: amountUntaxed,
-      taxGroups: const [],
-    );
+    
+    try {
+      // Obtener companyId desde cache
+      final kv = getIt<CustomOdooKv>();
+      final companyIdStr = kv.get('companyId');
+      
+      int? companyId;
+      if (companyIdStr != null) {
+        companyId = int.tryParse(companyIdStr.toString());
+      }
+      
+      if (companyId == null) {
+        // Fallback: cálculo simplificado si no hay companyId
+        print('⚠️ ORDER_TOTALS_WIDGET: No hay companyId en cache - usando cálculo simplificado');
+        double amountUntaxed = 0.0;
+        for (final line in lines) {
+          final subtotal = line.priceSubtotal.toDouble();
+          if (subtotal > 0) {
+            amountUntaxed += subtotal;
+          } else {
+            final qty = (line.quantity).toDouble();
+            final unit = (line.priceUnit).toDouble();
+            amountUntaxed += qty * unit;
+          }
+        }
+        return OrderTotals(
+          amountUntaxed: amountUntaxed,
+          amountTax: 0.0,
+          amountTotal: amountUntaxed,
+          taxGroups: const [],
+        );
+      }
+      
+      // Usar servicio de cálculo para obtener impuestos reales
+      print('💰 ORDER_TOTALS_WIDGET: Calculando totales con servicio (modo edición)');
+      final orderTotalsService = getIt<OrderTotalsCalculationService>();
+      final totals = orderTotalsService.calculateTotals(
+        orderLines: lines,
+        companyId: companyId,
+      );
+      
+        print('✅ ORDER_TOTALS_WIDGET: Totales calculados en modo edición:');
+      print('   - Subtotal: ${totals.amountUntaxed}');
+      print('   - Impuestos: ${totals.amountTax}');
+      print('   - Total: ${totals.amountTotal}');
+      print('   - TaxGroups: ${totals.taxGroups.length}');
+      for (final group in totals.taxGroups) {
+        print('   - TaxGroup: ${group.name} - ${group.amount} (${group.percentage}%)');
+      }
+      
+      return totals;
+    } catch (e) {
+      print('❌ ORDER_TOTALS_WIDGET: Error calculando totales en modo edición: $e');
+      // Fallback: cálculo simplificado en caso de error
+      double amountUntaxed = 0.0;
+      for (final line in lines) {
+        final subtotal = line.priceSubtotal.toDouble();
+        if (subtotal > 0) {
+          amountUntaxed += subtotal;
+        } else {
+          final qty = (line.quantity).toDouble();
+          final unit = (line.priceUnit).toDouble();
+          amountUntaxed += qty * unit;
+        }
+      }
+      return OrderTotals(
+        amountUntaxed: amountUntaxed,
+        amountTax: 0.0,
+        amountTotal: amountUntaxed,
+        taxGroups: const [],
+      );
+    }
   }
 }
 
@@ -304,7 +397,7 @@ class _TotalsContent extends StatelessWidget {
       if (count % 3 == 0 && i != 0) sb.write('.');
     }
     final rev = sb.toString().split('').reversed.join();
-    return '\u00024$rev';
+    return '\$$rev';
   }
   
   @override
@@ -321,11 +414,29 @@ class _TotalsContent extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             _buildTotalRow(context, 'Subtotal:', totals.amountUntaxed),
-            ...totals.taxGroups.map((group) => 
-              _buildTotalRow(context, '${group.name}:', group.amount)
+            Builder(
+              builder: (context) {
+                print('🔍 ORDER_TOTALS_WIDGET (_TotalsContent): taxGroups.length = ${totals.taxGroups.length}');
+                print('🔍 ORDER_TOTALS_WIDGET (_TotalsContent): amountTax = ${totals.amountTax}');
+                if (totals.taxGroups.isNotEmpty) {
+                  print('🔍 ORDER_TOTALS_WIDGET (_TotalsContent): Mostrando ${totals.taxGroups.length} grupos de impuestos');
+                  for (final group in totals.taxGroups) {
+                    print('🔍 ORDER_TOTALS_WIDGET (_TotalsContent): - ${group.name}: ${group.amount} (${group.percentage}%)');
+                  }
+                } else {
+                  print('⚠️ ORDER_TOTALS_WIDGET (_TotalsContent): No hay taxGroups, pero amountTax = ${totals.amountTax}');
+                }
+                return Column(
+                  children: [
+                    ...totals.taxGroups.map((group) => 
+                      _buildTotalRow(context, _formatTaxLabel(group), group.amount)
+                    ),
+                    if (totals.taxGroups.isEmpty && totals.amountTax > 0)
+                      _buildTotalRow(context, 'Impuestos:', totals.amountTax),
+                  ],
+                );
+              },
             ),
-            if (totals.taxGroups.isEmpty && totals.amountTax > 0)
-              _buildTotalRow(context, 'Impuestos:', totals.amountTax),
             const Divider(),
             _buildTotalRow(context, 'Total:', totals.amountTotal, isTotal: true),
           ],
@@ -360,6 +471,14 @@ class _TotalsContent extends StatelessWidget {
         ],
       ),
     );
+  }
+  
+  /// Formatea el nombre del impuesto con su porcentaje
+  String _formatTaxLabel(TaxGroup group) {
+    if (group.percentage != null) {
+      return '${group.name} (${group.percentage!.toStringAsFixed(0)}%):';
+    }
+    return '${group.name}:';
   }
 }
 

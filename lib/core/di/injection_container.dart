@@ -15,8 +15,11 @@ import '../../data/repositories/employee_repository.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/pricelist_repository.dart';
+import '../../data/repositories/tax_repository.dart';
 import '../../data/repositories/city_repository.dart';
 import '../../data/repositories/shipping_address_repository.dart';
+import '../../core/services/tax_calculation_service.dart';
+import '../../core/services/order_totals_calculation_service.dart';
 import '../../data/repositories/operation_queue_repository.dart';
 import '../../data/repositories/local_id_repository.dart';
 import '../../data/repositories/sync_coordinator_repository.dart';
@@ -466,6 +469,18 @@ Future<void> _setupRepositories() async {
       getIt<CustomOdooKv>(),
     ));
     
+    // Desregistrar TaxRepository anterior si existe
+    if (getIt.isRegistered<TaxRepository>()) {
+      getIt.unregister<TaxRepository>();
+    }
+    
+    // Registrar TaxRepository
+    getIt.registerLazySingleton<TaxRepository>(() => TaxRepository(
+      env,
+      getIt<NetworkConnectivity>(),
+      getIt<CustomOdooKv>(),
+    ));
+    
     // Desregistrar CityRepository anterior si existe
     if (getIt.isRegistered<CityRepository>()) {
       getIt.unregister<CityRepository>();
@@ -478,7 +493,24 @@ Future<void> _setupRepositories() async {
       getIt<CustomOdooKv>(),
     ));
     
-    print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist + City)');
+    print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist + Tax + City)');
+    
+    // Registrar servicios de cálculo
+    if (getIt.isRegistered<TaxCalculationService>()) {
+      getIt.unregister<TaxCalculationService>();
+    }
+    getIt.registerLazySingleton<TaxCalculationService>(
+      () => TaxCalculationService(getIt<TaxRepository>()),
+    );
+    
+    if (getIt.isRegistered<OrderTotalsCalculationService>()) {
+      getIt.unregister<OrderTotalsCalculationService>();
+    }
+    getIt.registerLazySingleton<OrderTotalsCalculationService>(
+      () => OrderTotalsCalculationService(getIt<TaxCalculationService>()),
+    );
+    
+    print('✅ Servicios de cálculo configurados correctamente');
     
     // Registrar servicios offline
     if (getIt.isRegistered<SyncCoordinatorRepository>()) {
@@ -978,6 +1010,14 @@ void initAuthScope(OdooSession session) {
         getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
   );
   
+  if (getIt.isRegistered<TaxRepository>()) {
+    getIt.unregister<TaxRepository>();
+  }
+  getIt.registerLazySingleton<TaxRepository>(
+    () => TaxRepository(
+        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
+  );
+  
   if (getIt.isRegistered<CityRepository>()) {
     getIt.unregister<CityRepository>();
   }
@@ -986,7 +1026,7 @@ void initAuthScope(OdooSession session) {
         getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
   );
   
-  print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist + City)');
+  print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist + Tax + City)');
 }
 
 

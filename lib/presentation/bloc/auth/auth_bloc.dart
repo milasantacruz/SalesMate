@@ -12,6 +12,7 @@ import 'auth_state.dart';
 import '../../../core/license/license_service.dart';
 import '../../../data/repositories/employee_repository.dart';
 import '../../../data/repositories/pricelist_repository.dart';
+import '../../../data/repositories/tax_repository.dart';
 import '../../../core/network/network_connectivity.dart';
 
 /// BLoC para manejar la autenticación de usuarios
@@ -257,6 +258,66 @@ class EmployeePinLoginRequested extends AuthEvent {
         print('⚠️ AUTH_BLOC: ⚠️⚠️⚠️ ADVERTENCIA: tarifaId es NULL - No se guardará en cache');
         print('⚠️ AUTH_BLOC: Esto significa que el webhook no incluyó tarifa_id en fieldValues');
         print('⚠️ AUTH_BLOC: Verificar respuesta del webhook para ver si tarifa_id está presente');
+      }
+      
+      // Guardar empresaId (importante para filtrado de impuestos y otros datos)
+      print('🏢 AUTH_BLOC: Verificando empresaId en LicenseInfo...');
+      print('🏢 AUTH_BLOC: info.empresaId = ${info.empresaId}');
+      print('🏢 AUTH_BLOC: Tipo de empresaId: ${info.empresaId.runtimeType}');
+      
+      if (info.empresaId != null) {
+        // Guardar como String para consistencia con otros valores
+        final empresaIdString = info.empresaId.toString();
+        print('🏢 AUTH_BLOC: Guardando empresaId como String: "$empresaIdString"');
+        
+        await kv.put('companyId', empresaIdString);
+        print('✅ AUTH_BLOC: empresaId guardado en cache (await completado)');
+        
+        // Verificar inmediatamente después de guardar
+        final savedEmpresaId = kv.get('companyId');
+        print('✅ AUTH_BLOC: Verificación inmediata - companyId leído desde cache: $savedEmpresaId');
+        print('✅ AUTH_BLOC: Tipo del valor guardado: ${savedEmpresaId?.runtimeType}');
+        
+        // Listar todas las claves para verificar que companyId está presente
+        print('🏢 AUTH_BLOC: Claves en cache después de guardar companyId: ${kv.keys.toList()}');
+        
+        // ✅ NUEVO: Cachear impuestos en background
+        try {
+          final netConn = getIt<NetworkConnectivity>();
+          final connState = await netConn.checkNetConn();
+          if (connState == netConnState.online) {
+            // Ejecutar en background - no bloquear login
+            Future.microtask(() async {
+              try {
+                final taxRepo = getIt<TaxRepository>();
+                await taxRepo.cacheTaxes(info.empresaId!);
+                print('✅ AUTH_BLOC: Impuestos cacheados en background para company ${info.empresaId}');
+                // Verificar que se guardó correctamente
+                final kv = getIt<CustomOdooKv>();
+                final cacheKey = 'taxes_${info.empresaId!}';
+                final verifyCache = kv.get(cacheKey);
+                print('🔍 AUTH_BLOC: Verificación cache impuestos - tipo: ${verifyCache.runtimeType}, es null: ${verifyCache == null}');
+                if (verifyCache is List) {
+                  print('🔍 AUTH_BLOC: Verificación cache impuestos - cantidad guardada: ${verifyCache.length}');
+                  if (verifyCache.isNotEmpty) {
+                    print('🔍 AUTH_BLOC: Primer impuesto del cache guardado: ${verifyCache.first}');
+                  }
+                }
+              } catch (e) {
+                print('⚠️ AUTH_BLOC: Error cacheando impuestos (no crítico): $e');
+              }
+            });
+          } else {
+            print('⚠️ AUTH_BLOC: Sin conexión - no se cachean impuestos');
+          }
+        } catch (e) {
+          print('⚠️ AUTH_BLOC: Error verificando conexión para cacheo de impuestos (no crítico): $e');
+          // No bloquear login por error en cacheo
+        }
+      } else {
+        print('⚠️ AUTH_BLOC: ⚠️⚠️⚠️ ADVERTENCIA: empresaId es NULL - No se guardará en cache');
+        print('⚠️ AUTH_BLOC: Esto significa que el webhook no incluyó empresa_id en fieldValues');
+        print('⚠️ AUTH_BLOC: Verificar respuesta del webhook para ver si empresa_id está presente');
       }
 
       // Autenticar con Odoo usando las credenciales de la licencia

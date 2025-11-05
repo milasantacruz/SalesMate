@@ -9,6 +9,8 @@ import '../../core/network/network_connectivity.dart';
 import '../../core/di/injection_container.dart';
 import '../../core/audit/audit_helper.dart';
 import '../../core/tenant/tenant_storage_config.dart';
+import '../../core/cache/custom_odoo_kv.dart';
+import '../../core/services/order_totals_calculation_service.dart';
 import 'odoo_call_queue_repository.dart';
 
 /// Repository para manejar operaciones con Sale Orders en Odoo con soporte offline
@@ -22,6 +24,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   
   // Cache para totales calculados
   final Map<String, OrderTotals> _totalsCache = {};
+  late final OrderTotalsCalculationService _orderTotalsService;
 
   SaleOrderRepository(
     OdooEnvironment env,
@@ -31,6 +34,8 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
   }) : super(env, netConn, cache) {
     // Inicializar _callQueue desde dependency injection
     _callQueue = getIt<OdooCallQueueRepository>();
+    // Inicializar servicio de cálculo de totales
+    _orderTotalsService = getIt<OrderTotalsCalculationService>();
   }
 
   @override
@@ -933,189 +938,80 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     }
   }
 
-  /// Calcula totales usando funciones de Odoo con cache
+  /// Calcula totales localmente usando la tarifa de la licencia y los impuestos cacheados
+  /// 
+  /// Ya no crea órdenes temporales en Odoo. Usa cálculo completamente local.
   Future<OrderTotals> calculateOrderTotals({
-    required int partnerId,
+    required int partnerId, // Mantener para compatibilidad y cache key, pero no se usa para cálculo
     required List<SaleOrderLine> orderLines,
   }) async {
     // Generar clave de cache
     final cacheKey = _generateTotalsCacheKey(partnerId, orderLines);
     
-    print('🧪 DIAG_TOT: calculateOrderTotals() start - partnerId=$partnerId, lines=${orderLines.length}');
-    print('🧮 SALE_ORDER_REPO: ⚠️ CALCULANDO TOTALES - Partner: $partnerId, Lines: ${orderLines.length}');
-    print('🧮 SALE_ORDER_REPO: ⚠️ Stack trace: ${StackTrace.current.toString().split('\n').take(5).join('\n')}');
+    print('🧮 SALE_ORDER_REPO: ═══════════════════════════════════════════════');
+    print('🧮 SALE_ORDER_REPO: CALCULANDO TOTALES LOCALMENTE');
+    print('🧮 SALE_ORDER_REPO: Partner: $partnerId, Lines: ${orderLines.length}');
+    print('🧮 SALE_ORDER_REPO: ═══════════════════════════════════════════════');
     
     try {
-      
       // Verificar cache primero
       if (_totalsCache.containsKey(cacheKey)) {
         print('💾 SALE_ORDER_REPO: Totales encontrados en cache');
         return _totalsCache[cacheKey]!;
       }
       
-      print('🧮 SALE_ORDER_REPO: Calculando totales con Odoo...');
-      print('🧮 SALE_ORDER_REPO: Partner ID: $partnerId');
-      print('🧮 SALE_ORDER_REPO: Order lines: ${orderLines.length}');
-      
-      // Obtener pricelist del partner
-      final pricelistId = await _getPartnerPricelistId(partnerId);
-      print('🧮 SALE_ORDER_REPO: Pricelist ID for partner $partnerId => $pricelistId');
-
-      // Crear datos temporales de la orden (incluye pricelist)
-      final tempOrderData = _buildTempOrderData(partnerId, pricelistId, orderLines);
-      print('🧮 SALE_ORDER_REPO: Temp order data: $tempOrderData');
-      
-      int? tempOrderId;
-      try {
-        // Crear una orden temporal para calcular totales
-        print('🧮 SALE_ORDER_REPO: ===== INICIANDO CREACIÓN TEMPORAL =====');
-        print('🧮 SALE_ORDER_REPO: Datos temporales: $tempOrderData');
-        print('🧮 SALE_ORDER_REPO: Modelo: sale.order');
-        print('🧮 SALE_ORDER_REPO: Método: create');
-        print('🧮 SALE_ORDER_REPO: Cliente HTTP: ${env.orpc.runtimeType}');
-        print('🧮 SALE_ORDER_REPO: URL base: ${env.orpc.baseURL}');
-        
-        try {
-          tempOrderId = await env.orpc.callKw({
-            'model': 'sale.order',
-            'method': 'create',
-            'args': [tempOrderData], // ← Usar tempOrderData en lugar de duplicar
-            'kwargs': {},
-          });
-          
-          print('🧮 SALE_ORDER_REPO: ===== RESPUESTA TEMPORAL RECIBIDA =====');
-          print('🧮 SALE_ORDER_REPO: Respuesta raw: $tempOrderId');
-          print('🧮 SALE_ORDER_REPO: Tipo de respuesta: ${tempOrderId.runtimeType}');
-          print('🧮 SALE_ORDER_REPO: Es int: ${tempOrderId is int}');
-          print('🧮 SALE_ORDER_REPO: Es String: ${tempOrderId is String}');
-          print('🧮 SALE_ORDER_REPO: Es List: ${tempOrderId is List}');
-          print('🧮 SALE_ORDER_REPO: Es Map: ${tempOrderId is Map}');
-          print('🧮 SALE_ORDER_REPO: ===== FIN CREACIÓN TEMPORAL =====');
-        } catch (e) {
-          print('❌ SALE_ORDER_REPO: Error en callKw: $e');
-          print('❌ SALE_ORDER_REPO: Error tipo: ${e.runtimeType}');
-          // Re-lanzar para que el catch exterior lo maneje
-          rethrow;
-        }
-        
-        print('🧮 SALE_ORDER_REPO: Orden temporal creada con ID: $tempOrderId');
-        
-        // Leer los totales calculados
-        final orderData = await env.orpc.callKw({
-          'model': 'sale.order',
-          'method': 'read',
-          'args': [[tempOrderId], ['amount_untaxed', 'amount_tax', 'amount_total']],
-          'kwargs': {},
-        });
-        
-        final order = (orderData as List).first as Map<String, dynamic>;
-        print('🧮 SALE_ORDER_REPO: Totales de la orden temporal: $order');
-        
-        // Obtener impuestos agrupados
-        final taxGroups = await _getTaxGroupsFromOrder(tempOrderId!);
-        
-        // Crear resultado antes de eliminar
-        final result = OrderTotals(
-          amountUntaxed: (order['amount_untaxed'] as num?)?.toDouble() ?? 0.0,
-          amountTax: (order['amount_tax'] as num?)?.toDouble() ?? 0.0,
-          amountTotal: (order['amount_total'] as num?)?.toDouble() ?? 0.0,
-          taxGroups: taxGroups,
-        );
-        
-        // Guardar en cache
-        _totalsCache[cacheKey] = result;
-        _cleanupCache(); // Limpiar cache si es muy grande
-        
-        print('✅ SALE_ORDER_REPO: Totales calculados con Odoo: ${result.amountTotal}');
-        print('🧪 DIAG_TOT: calculateOrderTotals() end (server) - amountTotal=${result.amountTotal}');
-        return result;
-        
-      } finally {
-        // Asegurar que la orden temporal se elimine SIEMPRE
-        if (tempOrderId != null) {
-          try {
-            print('🧮 SALE_ORDER_REPO: FINALLY - Eliminando orden temporal $tempOrderId...');
-            await env.orpc.callKw({
-              'model': 'sale.order',
-              'method': 'unlink',
-              'args': [[tempOrderId]],
-              'kwargs': {},
-            });
-            print('🧮 SALE_ORDER_REPO: FINALLY - Orden temporal $tempOrderId eliminada exitosamente');
-          } catch (e) {
-            print('❌ SALE_ORDER_REPO: FINALLY - Error eliminando orden temporal $tempOrderId: $e');
-            print('❌ SALE_ORDER_REPO: FINALLY - Error type: ${e.runtimeType}');
-            print('❌ SALE_ORDER_REPO: FINALLY - Error details: $e');
-          }
-        } else {
-          print('🧮 SALE_ORDER_REPO: FINALLY - No hay orden temporal que eliminar (tempOrderId es null)');
-        }
-      }
-      
-    } catch (e) {
-        print('⚠️ SALE_ORDER_REPO: Error con cálculo de Odoo: $e');
-        print('🔄 SALE_ORDER_REPO: Usando cálculo local como fallback...');
-        
-        // Fallback a cálculo local
+      // Obtener companyId desde cache
+      final companyId = _getCompanyIdFromCache();
+      if (companyId == null) {
+        print('⚠️ SALE_ORDER_REPO: No hay companyId en cache, usando cálculo fallback');
         final totals = _calculateLocalTotals(orderLines);
-        
         // Guardar en cache
         _totalsCache[cacheKey] = totals;
         _cleanupCache();
-        
-        print('✅ SALE_ORDER_REPO: Totales calculados localmente: ${totals.amountTotal}');
-        print('🧪 DIAG_TOT: calculateOrderTotals() end (local) - amountTotal=${totals.amountTotal}');
         return totals;
       }
-  }
-  
-  /// Obtiene impuestos agrupados desde una orden existente
-  Future<List<TaxGroup>> _getTaxGroupsFromOrder(int orderId) async {
-    try {
-      final taxGroups = await env.orpc.callKw({
-        'model': 'sale.order',
-        'method': '_get_tax_amount_by_group',
-        'args': [orderId],
-        'kwargs': {},
-      });
       
-      return (taxGroups as List).map((group) => TaxGroup.fromJson(group)).toList();
+      print('✅ SALE_ORDER_REPO: Company ID obtenido: $companyId');
+      print('💰 SALE_ORDER_REPO: Calculando totales con servicio local...');
+      
+      // Calcular totales localmente usando el servicio
+      final totals = _orderTotalsService.calculateTotals(
+        orderLines: orderLines,
+        companyId: companyId,
+      );
+      
+      // Guardar en cache
+      _totalsCache[cacheKey] = totals;
+      _cleanupCache();
+      
+      print('✅ SALE_ORDER_REPO: Totales calculados localmente:');
+      print('   - Subtotal sin impuestos: ${totals.amountUntaxed}');
+      print('   - Total de impuestos: ${totals.amountTax}');
+      print('   - Total final: ${totals.amountTotal}');
+      print('   - Grupos de impuestos: ${totals.taxGroups.length}');
+      print('🧮 SALE_ORDER_REPO: ═══════════════════════════════════════════════');
+      
+      return totals;
     } catch (e) {
-      print('⚠️ SALE_ORDER_REPO: Error obteniendo grupos de impuestos desde orden: $e');
-      return [];
+      print('❌ SALE_ORDER_REPO: Error calculando totales localmente: $e');
+      print('🔄 SALE_ORDER_REPO: Usando cálculo fallback simplificado...');
+      
+      // Fallback a cálculo simplificado
+      final totals = _calculateLocalTotals(orderLines);
+      
+      // Guardar en cache
+      _totalsCache[cacheKey] = totals;
+      _cleanupCache();
+      
+      print('✅ SALE_ORDER_REPO: Totales calculados con fallback: ${totals.amountTotal}');
+      return totals;
     }
   }
   
-  /// Construye datos temporales de orden para cálculos
-  Map<String, dynamic> _buildTempOrderData(int partnerId, int? pricelistId, List<SaleOrderLine> orderLines) {
-    final tempId = DateTime.now().millisecondsSinceEpoch; // ID único temporal
-    
-    // Obtener user_id de forma segura
-    int? userId;
-    try {
-      if (getIt.isRegistered<OdooSession>()) {
-        userId = getIt<OdooSession>().userId;
-      }
-    } catch (e) {
-      print('⚠️ SALE_ORDER_REPO: No se pudo obtener userId de OdooSession: $e');
-    }
-    
-    return {
-      'name': 'TEMP_CALC_$tempId', // Nombre único para identificar órdenes temporales
-      'partner_id': partnerId,
-      if (userId != null) 'user_id': userId, // Solo agregar si está disponible
-      if (pricelistId != null) 'pricelist_id': pricelistId,
-      'order_line': orderLines.map((line) => [
-        0, 0, {
-          'product_id': line.productId,
-          'product_uom_qty': line.quantity,
-          // No enviar price_unit ni tax_id: dejar que Odoo los calcule con la pricelist
-        }
-      ]).toList(),
-    };
-  }
-
   /// Lee la lista de precios del partner
+  /// 
+  /// NOTA: Este método se mantiene porque se usa en _enrichOrderDataForCreate
+  /// para enriquecer datos de órdenes al crearlas. No se usa para cálculo de totales.
   Future<int?> _getPartnerPricelistId(int partnerId) async {
     try {
       final read = await env.orpc.callKw({
@@ -1138,6 +1034,32 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       return null;
     } catch (e) {
       print('⚠️ SALE_ORDER_REPO: Error leyendo pricelist del partner $partnerId: $e');
+      return null;
+    }
+  }
+  
+  /// Obtiene el companyId desde cache (empresa_id de la licencia)
+  /// Retorna null si no está disponible en cache
+  int? _getCompanyIdFromCache() {
+    try {
+      final kv = getIt<CustomOdooKv>();
+      final companyIdStr = kv.get('companyId');
+      
+      if (companyIdStr == null) {
+        print('⚠️ SALE_ORDER_REPO: companyId no encontrado en cache');
+        return null;
+      }
+      
+      final companyId = int.tryParse(companyIdStr.toString());
+      if (companyId == null) {
+        print('⚠️ SALE_ORDER_REPO: companyId inválido en cache: $companyIdStr');
+        return null;
+      }
+      
+      print('✅ SALE_ORDER_REPO: companyId obtenido desde cache: $companyId');
+      return companyId;
+    } catch (e) {
+      print('❌ SALE_ORDER_REPO: Error obteniendo companyId desde cache: $e');
       return null;
     }
   }
