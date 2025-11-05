@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:motion_tab_bar_v2/motion-tab-bar.dart';
+import 'package:motion_tab_bar_v2/motion-tab-controller.dart';
+// motion_tab_bar_v2 removido para solución custom de un solo botón
 import '../bloc/auth/auth_bloc.dart';
 import '../bloc/auth/auth_event.dart';
 import '../bloc/auth/auth_state.dart';
-import '../bloc/partner_bloc.dart';
-import '../bloc/partner_event.dart';
+// Imports de Partner removidos por no uso en esta vista
 import '../widgets/partners_list.dart';
 import '../widgets/employees_list.dart';
 import '../widgets/sale_orders_list.dart';
@@ -29,14 +31,21 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
-  String _currentFilter = 'all';
   late TabController _tabController;
+  late MotionTabBarController _actionBarController;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
+
+    // Bottom action bar controller (3 items, center active)
+    _actionBarController = MotionTabBarController(
+      initialIndex: 1,
+      length: 3,
+      vsync: this,
+    );
   }
 
   void _onTabChanged() {
@@ -52,6 +61,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _searchController.dispose();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _actionBarController.dispose();
     super.dispose();
   }
 
@@ -83,12 +93,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ],
         ),
         actions: [
-          // Botón de testing para Incremental Sync
-          IconButton(
-            icon: const Icon(Icons.science),
-            tooltip: 'Test Incremental Sync',
-            onPressed: _runIncrementalSyncTests,
-          ),
           // Mostrar nombre del empleado
           BlocBuilder<AuthBloc, AuthState>(
             builder: (context, state) {
@@ -122,19 +126,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             icon: const Icon(Icons.search),
             onPressed: _showSearchDialog,
           ),*/
-          // Botón de prueba offline
-          IconButton(
-            icon: const Icon(Icons.offline_bolt, color: Color.fromARGB(255, 255, 56, 152)),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const OfflineTestPage(),
-                ),
-              );
-            },
-            tooltip: 'Probar funcionalidad offline',
-          ),
+          // Acción Offline trasladada al MotionTabBar
           // Menú de filtros
           /*PopupMenuButton<String>(
             icon: const Icon(Icons.filter_list),
@@ -275,48 +267,80 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ProductsList(),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          final currentIndex = _tabController.index;
-          if (currentIndex == 0) {
-            _showCreatePartnerDialog();
-          } else if (currentIndex == 1) {
-            _showCreateEmployeeDialog();
-          } else if (currentIndex == 2) {
-            _showCreateSaleOrderDialog();
-          } else if (currentIndex == 3) {
-            _showCreateProductDialog();
-          }
-        },
-        tooltip: _getFloatingActionButtonTooltip(),
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: Text(_getFloatingActionButtonTooltip(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+      bottomNavigationBar: Tooltip(
+        message: _getCreateActionTooltip(),
+        child: MotionTabBar(
+          controller: _actionBarController,
+          initialSelectedTab: 'Nuevo',
+          useSafeArea: true,
+          labelAlwaysVisible: true,
+          labels: const ['Sync', 'Nuevo', 'Offline'],
+          iconWidgets: [
+            const Icon(Icons.science, color: Colors.white, size: 28.0),
+            const Icon(Icons.add, color: Colors.black, size: 32.0), // Siempre negro y más grande
+            const Icon(Icons.offline_bolt, color: Colors.white, size: 28.0),
+          ],
+          textStyle: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500),
+          tabBarColor: Theme.of(context).colorScheme.primary,
+          tabSelectedColor: Colors.white, // círculo de selección en el centro
+          tabIconSelectedColor: Colors.black,
+          tabIconColor: Colors.white,
+          tabSize: 60,
+          tabBarHeight: 65,
+          tabIconSize: 28.0,
+          tabIconSelectedSize: 32.0,
+          onTabItemSelected: (int index) {
+            if (index == 0) {
+              _runIncrementalSyncTests();
+              setState(() { _actionBarController.index = 1; });
+            } else if (index == 1) {
+              _onCreateAction();
+            } else if (index == 2) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const OfflineTestPage()),
+              ).then((_) {
+                if (mounted) {
+                  setState(() { _actionBarController.index = 1; });
+                }
+              });
+            }
+          },
+        ),
       ),
     );
   }
 
-  /// Maneja la selección de filtros
-  void _handleFilterSelection(String filter) {
-    setState(() {
-      _currentFilter = filter;
-    });
+  // Manejo de filtros no utilizado en esta pantalla
 
-    switch (filter) {
-      case 'all':
-        context.read<PartnerBloc>().add(LoadPartners());
-        break;
-      case 'customers':
-        // Por ahora usar RefreshPartners hasta implementar filtros específicos
-        context.read<PartnerBloc>().add(RefreshPartners());
-        break;
-      case 'suppliers':
-        // Por ahora usar RefreshPartners hasta implementar filtros específicos
-        context.read<PartnerBloc>().add(RefreshPartners());
-        break;
-      case 'companies':
-        // Por ahora usar RefreshPartners hasta implementar filtros específicos
-        context.read<PartnerBloc>().add(RefreshPartners());
-        break;
+  // Texto de acción no usado (solo tooltip dinámico)
+
+  String _getCreateActionTooltip() {
+    final currentIndex = _tabController.index;
+    switch (currentIndex) {
+      case 0:
+        return 'Crear partner';
+      case 1:
+        return 'Crear empleado';
+      case 2:
+        return 'Nuevo pedido';
+      case 3:
+        return 'Crear producto';
+      default:
+        return 'Crear';
+    }
+  }
+
+  void _onCreateAction() {
+    final currentIndex = _tabController.index;
+    if (currentIndex == 0) {
+      _showCreatePartnerDialog();
+    } else if (currentIndex == 1) {
+      _showCreateEmployeeDialog();
+    } else if (currentIndex == 2) {
+      _showCreateSaleOrderDialog();
+    } else if (currentIndex == 3) {
+      _showCreateProductDialog();
     }
   }
 
@@ -680,21 +704,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  /// Obtiene el tooltip del botón flotante según la pestaña activa
-  String _getFloatingActionButtonTooltip() {
-    final currentIndex = _tabController.index;
-    switch (currentIndex) {
-      case 0:
-        return 'Crear Partner';
-      case 1:
-        return 'Crear Empleado';
-      case 2:
-        return 'Nuevo Pedido';
-      case 3:
-        return 'Crear Producto';
-      default:
-        return 'Crear';
-    }
-  }
+  // Tooltip del FAB eliminado al migrar a MotionTabBar
 }
 

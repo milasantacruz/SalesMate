@@ -195,6 +195,32 @@ class EmployeePinLoginRequested extends AuthEvent {
         kv.put('tipoven', info.tipoven);
         print('💾 AUTH_BLOC: tipoven guardado: ${info.tipoven}');
       }
+      
+      // Guardar tarifaId (importante para filtrado de productos)
+      print('💰 AUTH_BLOC: Verificando tarifaId en LicenseInfo...');
+      print('💰 AUTH_BLOC: info.tarifaId = ${info.tarifaId}');
+      print('💰 AUTH_BLOC: Tipo de tarifaId: ${info.tarifaId.runtimeType}');
+      
+      if (info.tarifaId != null) {
+        // Guardar como String para consistencia con otros valores
+        final tarifaIdString = info.tarifaId.toString();
+        print('💰 AUTH_BLOC: Guardando tarifaId como String: "$tarifaIdString"');
+        
+        await kv.put('tarifaId', tarifaIdString);
+        print('✅ AUTH_BLOC: tarifaId guardado en cache (await completado)');
+        
+        // Verificar inmediatamente después de guardar
+        final savedTarifaId = kv.get('tarifaId');
+        print('✅ AUTH_BLOC: Verificación inmediata - tarifaId leído desde cache: $savedTarifaId');
+        print('✅ AUTH_BLOC: Tipo del valor guardado: ${savedTarifaId?.runtimeType}');
+        
+        // Listar todas las claves para verificar que tarifaId está presente
+        print('💰 AUTH_BLOC: Claves en cache después de guardar: ${kv.keys.toList()}');
+      } else {
+        print('⚠️ AUTH_BLOC: ⚠️⚠️⚠️ ADVERTENCIA: tarifaId es NULL - No se guardará en cache');
+        print('⚠️ AUTH_BLOC: Esto significa que el webhook no incluyó tarifa_id en fieldValues');
+        print('⚠️ AUTH_BLOC: Verificar respuesta del webhook para ver si tarifa_id está presente');
+      }
 
       // Autenticar con Odoo usando las credenciales de la licencia
       if (info.serverUrl != null && info.database != null && 

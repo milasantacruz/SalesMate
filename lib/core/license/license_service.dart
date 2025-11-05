@@ -10,6 +10,7 @@ class LicenseInfo {
   final String? username;
   final String? password;
   final String? tipoven; // "U" = Usuario Admin (sin PIN), "E" = Empleado (con PIN)
+  final int? tarifaId; // ID de la tarifa/pricelist por defecto
 
   const LicenseInfo({
     required this.success,
@@ -20,6 +21,7 @@ class LicenseInfo {
     this.username,
     this.password,
     this.tipoven,
+    this.tarifaId,
   });
 
   factory LicenseInfo.fromWebhook(Map<String, dynamic> json) {
@@ -32,6 +34,7 @@ class LicenseInfo {
     String? username;
     String? password;
     String? tipoven;
+    int? tarifaId;
 
     print('🔍 LICENSE_INFO: Número de conexiones: ${connections.length}');
     
@@ -47,12 +50,43 @@ class LicenseInfo {
       password = fieldValues['contrasena'] as String?;
       tipoven = fieldValues['tipoven'] as String?;
       
+      // Extraer tarifa_id (puede venir como String o int)
+      print('💰 LICENSE_INFO: Buscando tarifa_id en fieldValues...');
+      print('💰 LICENSE_INFO: fieldValues.keys: ${fieldValues.keys.toList()}');
+      
+      final tarifaIdValue = fieldValues['tarifa_id'];
+      print('💰 LICENSE_INFO: tarifa_id raw value: $tarifaIdValue');
+      print('💰 LICENSE_INFO: tarifa_id tipo: ${tarifaIdValue?.runtimeType}');
+      
+      if (tarifaIdValue != null) {
+        if (tarifaIdValue is int) {
+          tarifaId = tarifaIdValue;
+          print('✅ LICENSE_INFO: tarifa_id parseado como int: $tarifaId');
+        } else if (tarifaIdValue is String) {
+          tarifaId = int.tryParse(tarifaIdValue);
+          if (tarifaId != null) {
+            print('✅ LICENSE_INFO: tarifa_id parseado desde String: $tarifaId');
+          } else {
+            print('⚠️ LICENSE_INFO: No se pudo parsear tarifa_id desde String: "$tarifaIdValue"');
+          }
+        } else if (tarifaIdValue is num) {
+          tarifaId = tarifaIdValue.toInt();
+          print('✅ LICENSE_INFO: tarifa_id parseado desde num: $tarifaId');
+        } else {
+          print('⚠️ LICENSE_INFO: tarifa_id tiene tipo inesperado: ${tarifaIdValue.runtimeType}');
+        }
+      } else {
+        print('⚠️ LICENSE_INFO: ⚠️⚠️⚠️ ADVERTENCIA: tarifa_id NO está presente en fieldValues');
+        print('⚠️ LICENSE_INFO: El webhook no incluye tarifa_id - Verificar en el backend');
+      }
+      
       print('🔍 LICENSE_INFO: Valores extraídos:');
       print('   - host: $serverUrl');
       print('   - nombre_bd: $database');
       print('   - usuario: $username');
       print('   - contrasena: ${password?.substring(0, 2)}*** (${password?.length} chars)');
       print('   - tipoven: $tipoven');
+      print('   - tarifa_id: $tarifaId ${tarifaId == null ? "⚠️ (NULL)" : "✅"}');
     }
 
     final info = LicenseInfo(
@@ -64,6 +98,7 @@ class LicenseInfo {
       username: username,
       password: password,
       tipoven: tipoven,
+      tarifaId: tarifaId,
     );
     
     print('✅ LICENSE_INFO: LicenseInfo creado - tipoven: $tipoven');

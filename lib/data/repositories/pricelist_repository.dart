@@ -4,6 +4,7 @@ import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
 import 'odoo_call_queue_repository.dart';
 import '../../core/di/injection_container.dart';
+import '../../core/cache/custom_odoo_kv.dart';
 
 /// Repository para manejar operaciones con Pricelist Items en Odoo
 class PricelistRepository extends OfflineOdooRepository<PricelistItem> {
@@ -154,6 +155,78 @@ class PricelistRepository extends OfflineOdooRepository<PricelistItem> {
       return null;
     } catch (e) {
       print('❌ PRICELIST_REPO: Error obteniendo pricelist para partner $partnerId: $e');
+      return null;
+    }
+  }
+
+  /// Obtiene el nombre de una tarifa/pricelist por su ID
+  /// Primero intenta leer desde cache (para modo offline)
+  /// Si no está en cache y hay conexión, obtiene desde Odoo y guarda en cache
+  Future<String?> getPricelistName(int pricelistId) async {
+    try {
+      print('💰 PRICELIST_REPO: Obteniendo nombre de pricelist $pricelistId...');
+      
+      // 1. Intentar leer desde cache primero (modo offline)
+      final kv = getIt<CustomOdooKv>();
+      final cacheKey = 'pricelist_name_$pricelistId';
+      final cachedName = kv.get(cacheKey);
+      
+      if (cachedName != null && cachedName is String) {
+        print('✅ PRICELIST_REPO: Nombre obtenido desde cache: $cachedName');
+        return cachedName;
+      }
+      
+      print('💰 PRICELIST_REPO: No encontrado en cache, intentando desde Odoo...');
+      
+      // 2. Verificar conectividad antes de hacer llamada a Odoo
+      final netConn = getIt<NetworkConnectivity>();
+      final connState = await netConn.checkNetConn();
+      
+      if (connState != netConnState.online) {
+        print('⚠️ PRICELIST_REPO: Sin conexión y no hay cache - retornando null');
+        return null;
+      }
+      
+      // 3. Obtener desde Odoo (solo si hay conexión)
+      final result = await env.orpc.callKw({
+        'model': 'product.pricelist',
+        'method': 'read',
+        'args': [[pricelistId]],
+        'kwargs': {
+          'fields': ['name'],
+        },
+      });
+
+      if (result is List && result.isNotEmpty) {
+        final data = result.first as Map<String, dynamic>;
+        final name = data['name'] as String?;
+        
+        if (name != null && name.isNotEmpty) {
+          // Guardar en cache para uso offline futuro
+          await kv.put(cacheKey, name);
+          print('✅ PRICELIST_REPO: Nombre obtenido desde Odoo y guardado en cache: $name');
+          return name;
+        }
+      }
+      
+      print('⚠️ PRICELIST_REPO: No se encontró nombre para pricelist $pricelistId');
+      return null;
+    } catch (e) {
+      print('❌ PRICELIST_REPO: Error obteniendo nombre de pricelist $pricelistId: $e');
+      
+      // En caso de error, intentar retornar desde cache como fallback
+      try {
+        final kv = getIt<CustomOdooKv>();
+        final cacheKey = 'pricelist_name_$pricelistId';
+        final cachedName = kv.get(cacheKey);
+        if (cachedName != null && cachedName is String) {
+          print('✅ PRICELIST_REPO: Fallback - usando nombre desde cache: $cachedName');
+          return cachedName;
+        }
+      } catch (cacheError) {
+        print('⚠️ PRICELIST_REPO: Error accediendo cache como fallback: $cacheError');
+      }
+      
       return null;
     }
   }

@@ -5,6 +5,7 @@ import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
 import 'odoo_call_queue_repository.dart';
 import '../../core/di/injection_container.dart';
+import '../../core/cache/custom_odoo_kv.dart';
 
 /// Repository para manejar operaciones con Products en Odoo con soporte offline
 class ProductRepository extends OfflineOdooRepository<Product> {
@@ -33,13 +34,111 @@ class ProductRepository extends OfflineOdooRepository<Product> {
   @override
   Product fromJson(Map<String, dynamic> json) => Product.fromJson(json);
 
+  /// Obtiene tarifa_id de la licencia desde cache
+  int? _getTarifaIdFromLicense() {
+    try {
+      final kv = getIt<CustomOdooKv>();
+      final tarifaIdStr = kv.get('tarifaId');
+      if (tarifaIdStr != null) {
+        final tarifaId = int.tryParse(tarifaIdStr.toString());
+        print('💰 PRODUCT_REPO: tarifa_id obtenido de licencia: $tarifaId');
+        return tarifaId;
+      }
+      print('⚠️ PRODUCT_REPO: No se encontró tarifa_id en cache');
+      return null;
+    } catch (e) {
+      print('❌ PRODUCT_REPO: Error obteniendo tarifa_id: $e');
+      return null;
+    }
+  }
+
   @override
   Future<List<dynamic>> searchRead() async {
+    // Obtener tarifa_id de la licencia para filtrar productos
+    final tarifaId = _getTarifaIdFromLicense();
+    
     // Construcción del dominio dinámico
     final List<dynamic> domain = [
       ['active', '=', true],
       ['sale_ok', '=', true], // Solo productos que se pueden vender
     ];
+
+    // ✅ FILTRO POR TARIFA: Solo productos que tengan un item en product.pricelist.item con ese pricelist_id
+    if (tarifaId != null) {
+      // Obtener IDs de productos que tienen items en la tarifa especificada
+      try {
+        final pricelistItems = await env.orpc.callKw({
+          'model': 'product.pricelist.item',
+          'method': 'search_read',
+          'args': [],
+          'kwargs': {
+            'domain': [
+              ['pricelist_id', '=', tarifaId],
+              ['active', '=', true],
+            ],
+            'fields': ['product_id', 'product_tmpl_id'],
+          },
+        });
+
+        if (pricelistItems is List && pricelistItems.isNotEmpty) {
+          final productIds = <int>{};
+          final productTmplIds = <int>{};
+          
+          for (final item in pricelistItems) {
+            if (item is Map<String, dynamic>) {
+              // Extraer product_id
+              final productIdValue = item['product_id'];
+              if (productIdValue != null) {
+                if (productIdValue is List && productIdValue.isNotEmpty) {
+                  productIds.add((productIdValue[0] as num).toInt());
+                } else if (productIdValue is int) {
+                  productIds.add(productIdValue);
+                }
+              }
+              
+              // Extraer product_tmpl_id
+              final productTmplIdValue = item['product_tmpl_id'];
+              if (productTmplIdValue != null) {
+                if (productTmplIdValue is List && productTmplIdValue.isNotEmpty) {
+                  productTmplIds.add((productTmplIdValue[0] as num).toInt());
+                } else if (productTmplIdValue is int) {
+                  productTmplIds.add(productTmplIdValue);
+                }
+              }
+            }
+          }
+          
+          if (productIds.isNotEmpty || productTmplIds.isNotEmpty) {
+            // Filtrar productos por IDs encontrados
+            if (productIds.isNotEmpty && productTmplIds.isNotEmpty) {
+              domain.add([
+                '|',
+                ['id', 'in', productIds.toList()],
+                ['product_tmpl_id', 'in', productTmplIds.toList()],
+              ]);
+            } else if (productIds.isNotEmpty) {
+              domain.add(['id', 'in', productIds.toList()]);
+            } else if (productTmplIds.isNotEmpty) {
+              domain.add(['product_tmpl_id', 'in', productTmplIds.toList()]);
+            }
+            print('💰 PRODUCT_REPO: Filtrando por tarifa_id=$tarifaId: ${productIds.length} productos por ID, ${productTmplIds.length} por plantilla');
+          } else {
+            print('⚠️ PRODUCT_REPO: No se encontraron productos en la tarifa $tarifaId');
+            // Retornar lista vacía si no hay productos en la tarifa
+            return [];
+          }
+        } else {
+          print('⚠️ PRODUCT_REPO: No se encontraron items de pricelist para tarifa_id=$tarifaId');
+          // Retornar lista vacía si no hay items en la tarifa
+          return [];
+        }
+      } catch (e) {
+        print('❌ PRODUCT_REPO: Error filtrando por tarifa_id: $e');
+        // Continuar sin filtro de tarifa si hay error
+      }
+    } else {
+      print('⚠️ PRODUCT_REPO: No hay tarifa_id configurada, mostrando todos los productos');
+    }
 
     // Filtro por término de búsqueda (código o nombre del producto)
     if (_searchTerm.isNotEmpty) {
@@ -370,7 +469,7 @@ class ProductRepository extends OfflineOdooRepository<Product> {
     await _callQueue.deleteRecord(modelName, id);
   }
 
-  @override
+  /// Obtiene registros incrementales para sincronización
   Future<List<Map<String, dynamic>>> fetchIncrementalRecords(String since) async {
     print('🔄 PRODUCT_REPO: Fetch incremental desde $since');
     

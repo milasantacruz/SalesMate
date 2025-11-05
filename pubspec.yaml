@@ -54,6 +54,7 @@ dependencies:
   equatable: ^2.0.5
   flex_color_scheme: ^8.2.0
   intl: ^0.18.1
+  motion_tab_bar_v2: ^0.4.0
 
 dev_dependencies:
   flutter_test:

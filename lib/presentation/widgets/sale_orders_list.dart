@@ -121,7 +121,7 @@ class _SaleOrdersListState extends State<SaleOrdersList> {
                                 const SizedBox(height: 2),
                                 Chip(
                                   label: Text(
-                                    order.state,
+                                    _translateState(order.state),
                                     style: const TextStyle(fontSize: 10),
                                   ),
                                   backgroundColor: _getStateColor(order.state),
@@ -205,6 +205,23 @@ class _SaleOrdersListState extends State<SaleOrdersList> {
     );
   }
 
+  String _translateState(String state) {
+    switch (state.toLowerCase()) {
+      case 'draft':
+        return 'Borrador';
+      case 'sent':
+        return 'Enviado';
+      case 'sale':
+        return 'Confirmado';
+      case 'done':
+        return 'Completado';
+      case 'cancel':
+        return 'Cancelado';
+      default:
+        return state; // Si no hay traducción, devolver el estado original
+    }
+  }
+
   Color _getStateColor(String state) {
     switch (state) {
       case 'sale':
@@ -219,5 +236,6 @@ class _SaleOrdersListState extends State<SaleOrdersList> {
         return Colors.grey.shade200;
     }
   }
+
 }
 

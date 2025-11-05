@@ -15,6 +15,8 @@ import '../../core/di/injection_container.dart';
 import '../../core/network/network_connectivity.dart';
 import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/shipping_address_repository.dart';
+import '../../data/repositories/pricelist_repository.dart';
+import '../../core/cache/custom_odoo_kv.dart';
 import 'package:flutter/services.dart';
 
 /// Página para visualizar y editar una orden de venta existente
@@ -57,10 +59,13 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
   List<Partner> _deliveryAddresses = [];
   bool _isLoadingAddresses = false;
   final Map<int, TextEditingController> _quantityControllers = {};
+  String? _licensePricelistName; // Tarifa de la licencia
 
   @override
   void initState() {
     super.initState();
+    // Cargar tarifa de la licencia al iniciar
+    _loadLicensePricelist();
     // Cargar la orden al inicializar
     context.read<SaleOrderBloc>().add(LoadSaleOrderById(orderId: widget.orderId));
   }
@@ -335,6 +340,10 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
             const SizedBox(height: 8),
             if (_currentOrder!.partnerName != null)
               Text('Cliente: ${_currentOrder!.partnerName}'),
+            // Campo de tarifa de la licencia (siempre visible)
+            const SizedBox(height: 4),
+            _buildPricelistField(),
+            const SizedBox(height: 4),
             Text('Fecha: ${_formatDate(_currentOrder!.dateOrder)}'),
             Text('Total: ${_fmtCurrency(_currentOrder!.amountTotal)}'),
             const SizedBox(height: 16),
@@ -490,6 +499,95 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
           ],
         ),
       );
+    }
+  }
+
+  /// Construye el campo de visualización de tarifa
+  Widget _buildPricelistField() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(Icons.price_check, size: 14, color: Colors.grey[600]),
+          const SizedBox(width: 4),
+          const Text(
+            'Tarifa: ',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey,
+            ),
+          ),
+          Text(
+            _licensePricelistName ?? 'Cargando...',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Carga la tarifa de la licencia desde cache
+  Future<void> _loadLicensePricelist() async {
+    print('💰 SALE_ORDER_VIEW: Iniciando carga de tarifa de licencia...');
+    try {
+      // Obtener tarifa_id de la licencia desde cache
+      final kv = getIt<CustomOdooKv>();
+      
+      // Debug: Listar todas las claves del cache
+      print('💰 SALE_ORDER_VIEW: Claves disponibles en cache: ${kv.keys.toList()}');
+      
+      final tarifaIdStr = kv.get('tarifaId');
+      
+      print('💰 SALE_ORDER_VIEW: tarifaId desde cache: $tarifaIdStr');
+      print('💰 SALE_ORDER_VIEW: Tipo de tarifaIdStr: ${tarifaIdStr?.runtimeType}');
+      
+      if (tarifaIdStr == null) {
+        print('⚠️ SALE_ORDER_VIEW: No hay tarifa_id en cache');
+        if (mounted) {
+          setState(() {
+            _licensePricelistName = 'Sin tarifa configurada';
+          });
+        }
+        return;
+      }
+      
+      final tarifaId = int.tryParse(tarifaIdStr.toString());
+      if (tarifaId == null) {
+        print('⚠️ SALE_ORDER_VIEW: tarifa_id inválido: $tarifaIdStr');
+        if (mounted) {
+          setState(() {
+            _licensePricelistName = 'Tarifa inválida';
+          });
+        }
+        return;
+      }
+      
+      print('💰 SALE_ORDER_VIEW: Obteniendo nombre de tarifa para ID: $tarifaId');
+      // Obtener nombre de la tarifa
+      final pricelistRepo = getIt<PricelistRepository>();
+      final name = await pricelistRepo.getPricelistName(tarifaId);
+      
+      print('💰 SALE_ORDER_VIEW: Nombre de tarifa obtenido: $name');
+      
+      if (mounted) {
+        setState(() {
+          _licensePricelistName = name ?? 'Tarifa $tarifaId';
+        });
+        print('✅ SALE_ORDER_VIEW: Tarifa actualizada en UI: ${_licensePricelistName}');
+      }
+    } catch (e, stackTrace) {
+      print('❌ SALE_ORDER_VIEW: Error cargando tarifa de licencia: $e');
+      print('❌ SALE_ORDER_VIEW: Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _licensePricelistName = 'Error al cargar';
+        });
+      }
     }
   }
 
