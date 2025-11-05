@@ -58,6 +58,259 @@ class PricelistRepository extends OfflineOdooRepository<PricelistItem> {
     }
   }
 
+  /// Cachea todos los items de una pricelist para uso offline
+  /// 
+  /// Si hay conexión, obtiene todos los items desde Odoo y los guarda en cache.
+  /// Si no hay conexión, no hace nada.
+  /// 
+  /// [pricelistId] ID de la pricelist/tarifa a cachear
+  Future<void> cachePricelistItems(int pricelistId) async {
+    try {
+      print('💰 PRICELIST_REPO: Iniciando cacheo de items para pricelist $pricelistId...');
+      
+      // Verificar conectividad
+      final connState = await netConn.checkNetConn();
+      if (connState != netConnState.online) {
+        print('⚠️ PRICELIST_REPO: Sin conexión - no se puede cachear items');
+        return;
+      }
+      
+      // Obtener todos los items de la pricelist
+      final items = await getPricelistItems(pricelistId);
+      
+      if (items.isEmpty) {
+        print('⚠️ PRICELIST_REPO: No se encontraron items para cachear');
+        return;
+      }
+      
+      // Serializar a JSON - asegurar que pricelistId esté correcto
+      // Guardar pricelist_id como int para simplificar el cache
+      final itemsJson = items.map((item) {
+        final json = item.toJson();
+        // Sobrescribir pricelist_id para guardarlo como int (más simple para cache)
+        json['pricelist_id'] = pricelistId;
+        return json;
+      }).toList();
+      
+      // Guardar en cache
+      final kv = getIt<CustomOdooKv>();
+      final cacheKey = 'pricelist_items_$pricelistId';
+      await kv.put(cacheKey, itemsJson);
+      
+      print('✅ PRICELIST_REPO: ${items.length} items cacheados para pricelist $pricelistId');
+    } catch (e) {
+      print('❌ PRICELIST_REPO: Error cacheando items de pricelist $pricelistId: $e');
+      // No relanzar error - el cacheo no debe bloquear operaciones
+    }
+  }
+
+  /// Obtiene los items de pricelist desde cache
+  /// 
+  /// Retorna lista vacía si no hay cache o si hay error.
+  /// 
+  /// [pricelistId] ID de la pricelist/tarifa
+  List<PricelistItem> getCachedPricelistItems(int pricelistId) {
+    try {
+      final kv = getIt<CustomOdooKv>();
+      final cacheKey = 'pricelist_items_$pricelistId';
+      final cachedData = kv.get(cacheKey);
+      
+      print('🔍 PRICELIST_REPO: Cache data type: ${cachedData.runtimeType}');
+      print('🔍 PRICELIST_REPO: Cache data is null: ${cachedData == null}');
+      
+      if (cachedData == null) {
+        print('⚠️ PRICELIST_REPO: No hay cache para pricelist $pricelistId');
+        return [];
+      }
+      
+      if (cachedData is List) {
+        print('🔍 PRICELIST_REPO: Cache data length: ${cachedData.length}');
+        if (cachedData.isNotEmpty) {
+          print('🔍 PRICELIST_REPO: Primer item del cache: ${cachedData.first}');
+        }
+        
+        final items = cachedData
+            .map((item) {
+              try {
+                // Asegurar que el JSON tenga el formato correcto
+                final itemMap = Map<String, dynamic>.from(item as Map);
+                // El pricelist_id puede venir como int (del cache) o como [id, '']
+                // Normalizar al formato [id, ''] que espera fromJson
+                if (itemMap.containsKey('pricelist_id')) {
+                  final pidValue = itemMap['pricelist_id'];
+                  if (pidValue is int) {
+                    itemMap['pricelist_id'] = [pidValue, ''];
+                  } else if (pidValue is List && pidValue.isNotEmpty) {
+                    // Ya está en formato [id, ''], mantenerlo
+                    itemMap['pricelist_id'] = pidValue;
+                  } else {
+                    // Si no tiene formato válido, usar el pricelistId del parámetro
+                    itemMap['pricelist_id'] = [pricelistId, ''];
+                  }
+                } else {
+                  // Si no está presente, agregarlo
+                  itemMap['pricelist_id'] = [pricelistId, ''];
+                }
+                
+                // Deserializar el item
+                final deserializedItem = fromJson(itemMap);
+                // Asegurar que pricelistId esté correcto (fromJson lo establece en 0)
+                if (deserializedItem.pricelistId == 0) {
+                  return deserializedItem.copyWith(pricelistId: pricelistId);
+                }
+                return deserializedItem;
+              } catch (e) {
+                print('⚠️ PRICELIST_REPO: Error deserializando item: $e');
+                return null;
+              }
+            })
+            .whereType<PricelistItem>()
+            .toList();
+        print('✅ PRICELIST_REPO: ${items.length} items obtenidos desde cache');
+        return items;
+      }
+      
+      print('⚠️ PRICELIST_REPO: Cache tiene formato incorrecto para pricelist $pricelistId');
+      return [];
+    } catch (e) {
+      print('❌ PRICELIST_REPO: Error leyendo cache de pricelist $pricelistId: $e');
+      return [];
+    }
+  }
+
+  /// Limpia el cache de items de una pricelist
+  /// 
+  /// Útil para forzar refresco de datos.
+  /// 
+  /// [pricelistId] ID de la pricelist/tarifa
+  Future<void> clearPricelistItemsCache(int pricelistId) async {
+    try {
+      final kv = getIt<CustomOdooKv>();
+      final cacheKey = 'pricelist_items_$pricelistId';
+      await kv.delete(cacheKey);
+      print('✅ PRICELIST_REPO: Cache limpiado para pricelist $pricelistId');
+    } catch (e) {
+      print('❌ PRICELIST_REPO: Error limpiando cache de pricelist $pricelistId: $e');
+    }
+  }
+
+  /// Obtiene el precio calculado para un producto desde la tarifa de la licencia
+  /// 
+  /// Lógica:
+  /// 1. Obtiene tarifaId desde cache de licencia
+  /// 2. Busca PricelistItem para el producto (cache primero, luego Odoo)
+  /// 3. Si encuentra item: calcula precio con item.calculatePrice()
+  /// 4. Si no encuentra: retorna null (usar basePrice como fallback)
+  /// 
+  /// [productId] ID del producto específico
+  /// [productTmplId] ID de la plantilla del producto (puede ser null)
+  /// [basePrice] Precio base del producto (product.listPrice)
+  /// 
+  /// Retorna el precio calculado o null si no hay item en tarifa
+  Future<double?> getCalculatedPriceForProduct({
+    required int productId,
+    required int? productTmplId,
+    required double basePrice,
+  }) async {
+    try {
+      // 1. Obtener tarifaId desde cache de licencia
+      final kv = getIt<CustomOdooKv>();
+      final tarifaIdStr = kv.get('tarifaId');
+      
+      if (tarifaIdStr == null) {
+        print('⚠️ PRICELIST_REPO: No hay tarifa_id configurada - usando precio base');
+        return null; // Usar basePrice
+      }
+      
+      final tarifaId = int.tryParse(tarifaIdStr.toString());
+      if (tarifaId == null) {
+        print('⚠️ PRICELIST_REPO: tarifa_id inválido - usando precio base');
+        return null; // Usar basePrice
+      }
+      
+      print('💰 PRICELIST_REPO: Calculando precio para producto $productId (tarifa: $tarifaId)');
+      
+      // 2. Buscar PricelistItem (primero desde cache)
+      PricelistItem? item;
+      
+      // Intentar desde cache primero
+      final cachedItems = getCachedPricelistItems(tarifaId);
+      print('🔍 PRICELIST_REPO: Items en cache: ${cachedItems.length}');
+      if (cachedItems.isNotEmpty) {
+        print('🔍 PRICELIST_REPO: Primeros 3 items en cache:');
+        for (var i = 0; i < cachedItems.length && i < 3; i++) {
+          final cachedItem = cachedItems[i];
+          print('   - Item ${cachedItem.id}: productId=${cachedItem.productId}, productTmplId=${cachedItem.productTmplId}');
+        }
+        // ✅ CORRECCIÓN: Buscar primero por product_tmpl_id (más común en Odoo)
+        if (productTmplId != null) {
+          try {
+            item = cachedItems.firstWhere(
+              (i) => i.productTmplId == productTmplId && i.productTmplId != null,
+            );
+            print('✅ PRICELIST_REPO: Item encontrado en cache por product_tmpl_id: ${item.id}');
+          } catch (e) {
+            // No encontrado por template, buscar por product_id específico (menos común)
+            try {
+              item = cachedItems.firstWhere(
+                (i) => i.productId == productId && i.productId != null,
+              );
+              print('✅ PRICELIST_REPO: Item encontrado en cache por product_id: ${item.id}');
+            } catch (e) {
+              // No encontrado por ninguno
+              print('⚠️ PRICELIST_REPO: No se encontró item en cache para producto $productId');
+            }
+          }
+        } else {
+          // Si no hay productTmplId, buscar solo por productId
+          try {
+            item = cachedItems.firstWhere(
+              (i) => i.productId == productId && i.productId != null,
+            );
+            print('✅ PRICELIST_REPO: Item encontrado en cache por product_id: ${item.id}');
+          } catch (e) {
+            print('⚠️ PRICELIST_REPO: No se encontró item en cache para producto $productId');
+          }
+        }
+      }
+      
+      // Si no se encontró en cache, intentar desde Odoo (solo si hay conexión)
+      if (item == null) {
+        final connState = await netConn.checkNetConn();
+        if (connState == netConnState.online) {
+          // ✅ CORRECCIÓN: Buscar primero por template (más común)
+          if (productTmplId != null) {
+            item = await getPricelistItemForProductTemplate(tarifaId, productTmplId);
+          }
+          
+          // Si no hay por template, buscar por productId específico
+          if (item == null) {
+            item = await getPricelistItemForProduct(tarifaId, productId);
+          }
+          
+          if (item != null) {
+            print('✅ PRICELIST_REPO: Item obtenido desde Odoo: ${item.id}');
+          }
+        } else {
+          print('⚠️ PRICELIST_REPO: Sin conexión y no hay cache - usando precio base');
+        }
+      }
+      
+      // 3. Calcular precio
+      if (item != null) {
+        final calculatedPrice = item.calculatePrice(basePrice);
+        print('✅ PRICELIST_REPO: Precio calculado: $basePrice -> $calculatedPrice (item: ${item.id})');
+        return calculatedPrice;
+      } else {
+        print('ℹ️ PRICELIST_REPO: No hay item en tarifa para producto $productId - usando precio base');
+        return null; // Usar basePrice
+      }
+    } catch (e) {
+      print('❌ PRICELIST_REPO: Error calculando precio para producto $productId: $e');
+      return null; // En caso de error, usar basePrice
+    }
+  }
+
   /// Obtiene el item de lista de precios para un producto específico
   Future<PricelistItem?> getPricelistItemForProduct(int pricelistId, int productId) async {
     try {

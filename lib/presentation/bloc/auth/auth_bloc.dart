@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
+import 'package:odoo_repository/odoo_repository.dart';
 import '../../../core/di/injection_container.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/cache/custom_odoo_kv.dart';
@@ -10,6 +11,8 @@ import 'auth_event.dart';
 import 'auth_state.dart';
 import '../../../core/license/license_service.dart';
 import '../../../data/repositories/employee_repository.dart';
+import '../../../data/repositories/pricelist_repository.dart';
+import '../../../core/network/network_connectivity.dart';
 
 /// BLoC para manejar la autenticación de usuarios
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
@@ -216,6 +219,40 @@ class EmployeePinLoginRequested extends AuthEvent {
         
         // Listar todas las claves para verificar que tarifaId está presente
         print('💰 AUTH_BLOC: Claves en cache después de guardar: ${kv.keys.toList()}');
+        
+        // ✅ NUEVO: Cachear items de pricelist en background
+        try {
+          final netConn = getIt<NetworkConnectivity>();
+          final connState = await netConn.checkNetConn();
+          if (connState == netConnState.online) {
+            // Ejecutar en background - no bloquear login
+            Future.microtask(() async {
+              try {
+                final pricelistRepo = getIt<PricelistRepository>();
+                await pricelistRepo.cachePricelistItems(info.tarifaId!);
+                print('✅ AUTH_BLOC: Items de pricelist cacheados en background');
+                // Verificar que se guardó correctamente
+                final kv = getIt<CustomOdooKv>();
+                final cacheKey = 'pricelist_items_${info.tarifaId!}';
+                final verifyCache = kv.get(cacheKey);
+                print('🔍 AUTH_BLOC: Verificación cache - tipo: ${verifyCache.runtimeType}, es null: ${verifyCache == null}');
+                if (verifyCache is List) {
+                  print('🔍 AUTH_BLOC: Verificación cache - items guardados: ${verifyCache.length}');
+                  if (verifyCache.isNotEmpty) {
+                    print('🔍 AUTH_BLOC: Primer item del cache guardado: ${verifyCache.first}');
+                  }
+                }
+              } catch (e) {
+                print('⚠️ AUTH_BLOC: Error cacheando items de pricelist (no crítico): $e');
+              }
+            });
+          } else {
+            print('⚠️ AUTH_BLOC: Sin conexión - no se cachean items de pricelist');
+          }
+        } catch (e) {
+          print('⚠️ AUTH_BLOC: Error verificando conexión para cacheo (no crítico): $e');
+          // No bloquear login por error en cacheo
+        }
       } else {
         print('⚠️ AUTH_BLOC: ⚠️⚠️⚠️ ADVERTENCIA: tarifaId es NULL - No se guardará en cache');
         print('⚠️ AUTH_BLOC: Esto significa que el webhook no incluyó tarifa_id en fieldValues');

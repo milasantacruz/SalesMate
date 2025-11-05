@@ -29,10 +29,13 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
       _productRepository.setSearchParams(searchTerm: '', type: null);
       await _productRepository.loadRecords();
       final products = _productRepository.latestRecords;
+      
       if (products.isEmpty) {
         emit(const ProductEmpty());
       } else {
-        emit(ProductLoaded(products));
+        // ✅ NUEVO: Calcular precios desde tarifa de licencia
+        final productsWithPrices = await _calculatePricesForProducts(products);
+        emit(ProductLoaded(productsWithPrices));
       }
     } catch (e) {
       emit(ProductError('Error cargando productos: $e'));
@@ -57,11 +60,14 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
       // Cargar los datos con los filtros aplicados
       await _productRepository.loadRecords();
       final products = _productRepository.latestRecords;
+      
       if (products.isEmpty) {
         emit(const ProductEmpty(
             message: 'No se encontraron resultados para los filtros aplicados'));
       } else {
-        emit(ProductLoaded(products));
+        // ✅ NUEVO: Calcular precios desde tarifa de licencia
+        final productsWithPrices = await _calculatePricesForProducts(products);
+        emit(ProductLoaded(productsWithPrices));
       }
     } catch (e) {
       emit(ProductError('Error buscando y filtrando productos: $e'));
@@ -73,10 +79,13 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
     emit(ProductLoading());
     try {
       final products = await _productRepository.getProductsByType(event.type);
+      
       if (products.isEmpty) {
         emit(ProductEmpty(message: 'No se encontraron productos de tipo ${event.type}'));
       } else {
-        emit(ProductFilteredByType(products: products, type: event.type));
+        // ✅ NUEVO: Calcular precios desde tarifa de licencia
+        final productsWithPrices = await _calculatePricesForProducts(products);
+        emit(ProductFilteredByType(products: productsWithPrices, type: event.type));
       }
     } catch (e) {
       emit(ProductError('Error cargando productos por tipo: $e'));
@@ -87,10 +96,13 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
     emit(ProductLoading());
     try {
       final products = await _productRepository.searchProducts(event.searchTerm);
+      
       if (products.isEmpty) {
         emit(ProductEmpty(message: 'No se encontraron productos para "${event.searchTerm}"'));
       } else {
-        emit(ProductSearchResult(products: products, searchTerm: event.searchTerm));
+        // ✅ NUEVO: Calcular precios desde tarifa de licencia
+        final productsWithPrices = await _calculatePricesForProducts(products);
+        emit(ProductSearchResult(products: productsWithPrices, searchTerm: event.searchTerm));
       }
     } catch (e) {
       emit(ProductError('Error buscando productos: $e'));
@@ -244,5 +256,43 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
     }
     
     return productsWithPricelist;
+  }
+
+  /// Calcula precios para una lista de productos usando la tarifa de la licencia
+  /// 
+  /// Usa getCalculatedPriceForProduct() que busca primero en cache (offline)
+  /// y luego en Odoo si hay conexión.
+  /// 
+  /// [products] Lista de productos a calcular precios
+  /// Retorna lista de productos con precios calculados (almacenados en listPrice)
+  Future<List<Product>> _calculatePricesForProducts(List<Product> products) async {
+    final productsWithCalculatedPrice = <Product>[];
+    
+    print('💰 PRODUCT_BLOC: Calculando precios para ${products.length} productos desde tarifa de licencia...');
+    
+    for (final product in products) {
+      try {
+        final calculatedPrice = await _pricelistRepository.getCalculatedPriceForProduct(
+          productId: product.id,
+          productTmplId: product.productTmplId,
+          basePrice: product.listPrice,
+        );
+        
+        // Usar precio calculado si existe, sino usar precio base
+        final finalPrice = calculatedPrice ?? product.listPrice;
+        
+        // Reutilizar listPrice para almacenar precio calculado
+        productsWithCalculatedPrice.add(
+          product.copyWith(listPrice: finalPrice),
+        );
+      } catch (e) {
+        print('⚠️ PRODUCT_BLOC: Error calculando precio para producto ${product.id}: $e');
+        // En caso de error, mantener precio base
+        productsWithCalculatedPrice.add(product);
+      }
+    }
+    
+    print('✅ PRODUCT_BLOC: ${productsWithCalculatedPrice.length} productos con precios calculados');
+    return productsWithCalculatedPrice;
   }
 }

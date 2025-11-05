@@ -1062,6 +1062,65 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
     );
   }
 
+  /// Maneja la selección de un producto, calculando el precio desde la tarifa
+  Future<void> _onProductSelected(Product product, double quantity) async {
+    // Verificar si el producto ya existe
+    final existingIndex = _orderLines.indexWhere(
+      (line) => line.productId == product.id,
+    );
+    
+    // ✅ NUEVO: Calcular precio desde tarifa
+    double finalPrice = product.listPrice; // Fallback por defecto
+    
+    try {
+      final pricelistRepo = getIt<PricelistRepository>();
+      final calculatedPrice = await pricelistRepo.getCalculatedPriceForProduct(
+        productId: product.id,
+        productTmplId: product.productTmplId,
+        basePrice: product.listPrice,
+      );
+      
+      if (calculatedPrice != null) {
+        finalPrice = calculatedPrice;
+        print('✅ NUEVO_PEDIDO: Precio calculado desde tarifa: $finalPrice (base: ${product.listPrice})');
+      } else {
+        print('ℹ️ NUEVO_PEDIDO: Usando precio base (no hay item en tarifa): $finalPrice');
+      }
+    } catch (e) {
+      print('❌ NUEVO_PEDIDO: Error calculando precio - usando precio base: $e');
+      // Continuar con precio base en caso de error
+    }
+    
+    if (existingIndex != -1) {
+      // Actualizar cantidad existente y precio
+      print('🔄 NUEVO_PEDIDO: Updating existing product at index $existingIndex');
+      setState(() {
+        final newQuantity = _orderLines[existingIndex].quantity + quantity;
+        _orderLines[existingIndex] = _orderLines[existingIndex].copyWith(
+          quantity: newQuantity,
+          priceUnit: finalPrice, // ✅ Usar precio calculado
+          priceSubtotal: finalPrice * newQuantity, // ✅ Usar precio calculado
+        );
+      });
+      print('🔄 NUEVO_PEDIDO: Updated orderLines.length: ${_orderLines.length}');
+    } else {
+      // Agregar nuevo producto con precio calculado
+      print('🔄 NUEVO_PEDIDO: Adding new product: ${product.name}');
+      setState(() {
+        _orderLines.add(SaleOrderLine(
+          productId: product.id,
+          productName: product.name,
+          productCode: product.defaultCode,
+          quantity: quantity,
+          priceUnit: finalPrice, // ✅ Usar precio calculado
+          priceSubtotal: finalPrice * quantity, // ✅ Usar precio calculado
+          taxesIds: product.taxesIds,
+        ));
+      });
+      print('🔄 NUEVO_PEDIDO: Added orderLines.length: ${_orderLines.length}');
+    }
+  }
+
   void _showProductSearch() {
     showModalBottomSheet(
       context: context,
@@ -1081,38 +1140,7 @@ class _NuevoPedidoPageState extends State<NuevoPedidoPage> {
           ),
           child: ProductSearchPopup(
             partnerId: _selectedPartner?.id,
-            onProductSelected: (product, quantity) {
-              // Verificar si el producto ya existe
-              final existingIndex = _orderLines.indexWhere(
-                (line) => line.productId == product.id,
-              );
-              
-              if (existingIndex != -1) {
-                // Actualizar cantidad existente
-                print('🔄 NUEVO_PEDIDO: Updating existing product at index $existingIndex');
-                setState(() {
-                  _orderLines[existingIndex] = _orderLines[existingIndex].copyWith(
-                    quantity: _orderLines[existingIndex].quantity + quantity,
-                  );
-                });
-                print('🔄 NUEVO_PEDIDO: Updated orderLines.length: ${_orderLines.length}');
-              } else {
-                // Agregar nuevo producto
-                print('🔄 NUEVO_PEDIDO: Adding new product: ${product.name}');
-                setState(() {
-                  _orderLines.add(SaleOrderLine(
-                    productId: product.id,
-                    productName: product.name,
-                    productCode: product.defaultCode,
-                    quantity: quantity,
-                    priceUnit: product.listPrice,
-                    priceSubtotal: product.listPrice * quantity,
-                    taxesIds: product.taxesIds,
-                  ));
-                });
-                print('🔄 NUEVO_PEDIDO: Added orderLines.length: ${_orderLines.length}');
-              }
-            },
+            onProductSelected: _onProductSelected, // ✅ Usar método async
           ),
         ),
       ),
