@@ -45,6 +45,27 @@ class CookieClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    // 🔧 FIX: Corregir endpoint de /web/dataset/call_kw a /xmlrpc/2/object
+    // El paquete odoo_rpc está usando incorrectamente el endpoint web
+    if (request.url.path.contains('/web/dataset/call_kw')) {
+      final originalUrl = request.url;
+      final correctedPath = request.url.path.replaceAll('/web/dataset/call_kw', '/xmlrpc/2/object');
+      final correctedUrl = Uri(
+        scheme: originalUrl.scheme,
+        host: originalUrl.host,
+        port: originalUrl.port,
+        path: correctedPath,
+        query: originalUrl.query,
+        fragment: originalUrl.fragment,
+      );
+      print('🔧 COOKIE_CLIENT: Corrigiendo endpoint de ${originalUrl.path} a ${correctedPath}');
+      print('🔧 COOKIE_CLIENT: URL original: ${originalUrl}');
+      print('🔧 COOKIE_CLIENT: URL corregida: ${correctedUrl}');
+      
+      // Crear un nuevo request con la URL corregida
+      request = _createRequestWithNewUrl(request, correctedUrl);
+    }
+    
     // print('🚀 ANDROID: Iniciando request a ${request.url}');
     // print('📋 ANDROID: Método: ${request.method}');
     // print('📋 ANDROID: Headers: ${request.headers}');
@@ -65,7 +86,6 @@ class CookieClient extends http.BaseClient {
       request.headers['Cookie'] = cookieHeader;
       // 🚫 LOGS COMENTADOS: Generan demasiado ruido
       // print('🍪 ANDROID: Enviando cookies: $cookieHeader');
-      
       // 🔍 DEBUG FASE 1: Verificar si las cookies interfieren con LicenseService
       if (request.url.toString().contains('app.proandsys.net')) {
         print('🔑 LICENSE_REQUEST: ⚠️ Cookies agregadas a petición de LicenseService');
@@ -106,6 +126,23 @@ class CookieClient extends http.BaseClient {
       
       // 🔍 VERIFICAR SI ES HTML (solo para call_kw)
       if (request.url.path.contains('call_kw')) {
+        // 🔍 DEBUG: Log detallado de la URL usada
+        print('🔍 ANDROID: URL completa de call_kw: ${request.url}');
+        print('🔍 ANDROID:   - Scheme: ${request.url.scheme}');
+        print('🔍 ANDROID:   - Host: ${request.url.host}');
+        print('🔍 ANDROID:   - Port: ${request.url.port}');
+        print('🔍 ANDROID:   - Path: ${request.url.path}');
+        print('🔍 ANDROID:   - Query: ${request.url.query}');
+        print('🔍 ANDROID:   - Fragment: ${request.url.fragment}');
+        print('🔍 ANDROID: Headers enviados:');
+        request.headers.forEach((key, value) {
+          if (key.toLowerCase() == 'cookie') {
+            print('🔍 ANDROID:   $key: ${value.length > 50 ? value.substring(0, 50) + "..." : value}');
+          } else {
+            print('🔍 ANDROID:   $key: $value');
+          }
+        });
+        
         final contentType = response.headers['content-type'] ?? '';
         if (contentType.contains('text/html')) {
           print('⚠️ ANDROID: RESPUESTA ES HTML, NO JSON!');
@@ -240,6 +277,37 @@ class CookieClient extends http.BaseClient {
       print('❌ ANDROID: Error en request: $e');
       print('❌ ANDROID: Error tipo: ${e.runtimeType}');
       rethrow;
+    }
+  }
+
+  /// Crea un nuevo request con una URL diferente, preservando todas las propiedades
+  http.BaseRequest _createRequestWithNewUrl(http.BaseRequest original, Uri newUrl) {
+    if (original is http.Request) {
+      return http.Request(original.method, newUrl)
+        ..headers.addAll(original.headers)
+        ..body = original.body
+        ..encoding = original.encoding;
+    } else if (original is http.StreamedRequest) {
+      final newRequest = http.StreamedRequest(original.method, newUrl)
+        ..headers.addAll(original.headers)
+        ..contentLength = original.contentLength
+        ..followRedirects = original.followRedirects
+        ..maxRedirects = original.maxRedirects
+        ..persistentConnection = original.persistentConnection;
+      
+      // Copiar el stream del body original
+      original.finalize().listen(
+        (data) => newRequest.sink.add(data),
+        onError: (error) => newRequest.sink.addError(error),
+        onDone: () => newRequest.sink.close(),
+        cancelOnError: true,
+      );
+      
+      return newRequest;
+    } else {
+      // Para otros tipos de request, intentar crear uno básico
+      return http.Request(original.method, newUrl)
+        ..headers.addAll(original.headers);
     }
   }
 

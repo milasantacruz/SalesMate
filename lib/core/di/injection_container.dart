@@ -519,7 +519,7 @@ getIt.unregister<SyncCoordinatorRepository>();
     getIt.registerLazySingleton<SyncCoordinatorRepository>(() => SyncCoordinatorRepository(
       networkConnectivity: getIt<NetworkConnectivity>(),
       queueRepository: getIt<OperationQueueRepository>(),
-      odooClient: getIt<OdooClient>(),
+      env: getIt<OdooEnvironment>(),
       tenantCache: getIt<TenantAwareCache>(),
     ));
     
@@ -924,8 +924,9 @@ Future<bool> _handleAuthenticateResponse(
       print('✅ Factory de OdooEnvironment registrado (creación diferida)');
     }
     
-    // Configurar repositories (crearán el Environment lazy cuando se necesite)
-    await _setupRepositories();
+    // ⚠️ NO llamar _setupRepositories aquí porque fuerza la creación de OdooEnvironment
+    // Los repositorios se configurarán en initAuthScope() que se llama después del login
+    // Esto evita que OdooEnvironment se cree antes de tener la sesión correcta inicializada
     
     return true;
   } else {
@@ -934,8 +935,129 @@ Future<bool> _handleAuthenticateResponse(
   }
 }
 
+/// Espera a que la re-autenticación silenciosa complete después de crear OdooEnvironment
+/// Similar a BootstrapCoordinator._ensureSessionValid() pero con timeout más corto
+/// CRÍTICO: También asegura que OdooClient.sessionId esté sincronizado con la cookie
+Future<void> _ensureReauthComplete({Duration timeout = const Duration(seconds: 10)}) async {
+  try {
+    final client = getIt<OdooClient>();
+    final cache = getIt<CustomOdooKv>();
+    final start = DateTime.now();
+    print('⏳ initAuthScope: Esperando re-autenticación silenciosa...');
+    
+    String? cookieSessionId;
+    
+    while (true) {
+      final sid = client.sessionId; // OdooSession
+      final hasValidSession = sid != null && sid.id.isNotEmpty;
+      
+      // Verificar también que las cookies estén disponibles en el CookieClient
+      bool hasValidCookies = false;
+      try {
+        if (client.httpClient is CookieClient) {
+          final cookieClient = client.httpClient as CookieClient;
+          final cookies = cookieClient.getCookies();
+          cookieSessionId = cookies['session_id'];
+          hasValidCookies = cookies.containsKey('session_id') && 
+            cookies['session_id']!.isNotEmpty;
+        }
+      } catch (e) {
+        print('⚠️ initAuthScope: Error verificando cookies: $e');
+      }
+      
+      // ✅ CRÍTICO: Si tenemos cookie pero no sessionId en cliente, recuperar desde cache
+      if (hasValidCookies && cookieSessionId != null && !hasValidSession) {
+        print('⚠️ initAuthScope: Cookie existe pero cliente no tiene sessionId');
+        print('⚠️ initAuthScope: Recuperando sesión desde cache...');
+        
+        // Intentar recuperar sesión desde cache
+        final sessionJson = cache.get(AppConstants.cacheSessionKey) as String?;
+        if (sessionJson != null) {
+          try {
+            final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
+            final cachedSession = OdooSession.fromJson(sessionData);
+            
+            // Si la cookie coincide con la sesión en cache, podemos usar esa sesión
+            if (cachedSession.id == cookieSessionId) {
+              print('✅ initAuthScope: Sesión encontrada en cache - ID coincide con cookie');
+              print('✅ initAuthScope: Cookie session_id: ${cookieSessionId.substring(0, 8)}...');
+              
+              // IMPORTANTE: El OdooClient debería tener sessionId automáticamente después de authenticate
+              // Pero si no lo tiene, debemos esperar a que la re-auth complete
+              // o recrear el cliente con la sesión correcta
+              print('⏳ initAuthScope: Esperando que re-auth complete para actualizar sessionId...');
+            }
+          } catch (e) {
+            print('⚠️ initAuthScope: Error parseando sesión desde cache: $e');
+          }
+        }
+      }
+      
+      if (hasValidSession && hasValidCookies) {
+        print('✅ initAuthScope: Re-autenticación completada');
+        print('   - SessionId: ${sid.id.substring(0, 8)}...');
+        print('   - Cookies: OK');
+        // Delay adicional para asegurar que las cookies y sessionId estén completamente sincronizados
+        await Future.delayed(const Duration(milliseconds: 500));
+        print('✅ initAuthScope: Sesión lista para cacheos');
+        return;
+      }
+      
+      // ✅ Si tenemos cookie válida pero aún no sessionId en cliente, seguir esperando
+      // La re-auth puede estar en progreso
+      if (hasValidCookies && !hasValidSession) {
+        print('⏳ initAuthScope: Cookie válida pero sessionId aún no disponible - esperando...');
+        print('   - Cookie session_id: ${cookieSessionId?.substring(0, 8) ?? "NULL"}...');
+      }
+      
+      if (DateTime.now().difference(start) >= timeout) {
+        print('⏳ initAuthScope: Timeout esperando re-autenticación');
+        print('   - SessionId válido: ${hasValidSession ? "SÍ" : "NO"}');
+        print('   - Cookies válidas: ${hasValidCookies ? "SÍ" : "NO"}');
+        
+        // ⚠️ CRÍTICO: Si tenemos cookie pero no sessionId, intentar recuperar desde cache
+        if (hasValidCookies && cookieSessionId != null && !hasValidSession) {
+          print('⚠️ initAuthScope: Reintentando recuperar sesión desde cache después de timeout...');
+          final sessionJson = cache.get(AppConstants.cacheSessionKey) as String?;
+          if (sessionJson != null) {
+            try {
+              final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
+              final cachedSession = OdooSession.fromJson(sessionData);
+              
+              // Si la cookie coincide, podemos continuar aunque cliente no tenga sessionId
+              // porque las cookies se enviarán automáticamente en las requests
+              if (cachedSession.id == cookieSessionId) {
+                print('✅ initAuthScope: Cookie válida coincide con sesión en cache - continuando');
+                print('✅ initAuthScope: Las cookies se enviarán automáticamente en requests');
+                return;
+              }
+            } catch (e) {
+              print('⚠️ initAuthScope: Error final parseando sesión: $e');
+            }
+          }
+        }
+        
+        break;
+      }
+      
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+  } catch (e) {
+    print('⚠️ initAuthScope: Error verificando re-autenticación: $e');
+    // Continuar de todas formas
+  }
+}
+
 /// Registra dependencias que requieren una sesión de Odoo activa.
-void initAuthScope(OdooSession session) {
+Future<void> initAuthScope(OdooSession session) async {
+  print('═══════════════════════════════════════════════════════════════');
+  print('⚠️⚠️⚠️ initAuthScope: INICIANDO INICIALIZACIÓN DE SCOPE DE AUTENTICACIÓN ⚠️⚠️⚠️');
+  print('═══════════════════════════════════════════════════════════════');
+  print('⚠️ initAuthScope:   - Session ID: ${session.id.substring(0, 8)}...');
+  print('⚠️ initAuthScope:   - User: ${session.userName}');
+  print('⚠️ initAuthScope:   - Database: ${session.dbName}');
+  print('═══════════════════════════════════════════════════════════════');
+  
   // Primero, verificamos si ya hay una sesión registrada y la eliminamos.
   if (getIt.isRegistered<OdooSession>()) {
     getIt.unregister<OdooSession>();
@@ -943,90 +1065,158 @@ void initAuthScope(OdooSession session) {
   // Registramos la nueva instancia de la sesión.
   getIt.registerSingleton<OdooSession>(session);
 
-  // ⚠️ NO desregistrar OdooEnvironment porque llama a dispose() que hace logout!
-  // Solo registrar si no existe
-  if (!getIt.isRegistered<OdooEnvironment>()) {
-    print('📦 initAuthScope: Creando nuevo OdooEnvironment');
-    getIt.registerSingleton<OdooEnvironment>(OdooEnvironment(
-      getIt<OdooClient>(),
-      session.dbName,
-      getIt<CustomOdooKv>(),
-      getIt<NetworkConnectivity>(),
-    ));
+  // ✅ NUEVO: Asegurar que el OdooClient tenga las cookies correctas antes de crear OdooEnvironment
+  final client = getIt<OdooClient>();
+  print('🔍 initAuthScope: Verificando OdooClient antes de crear OdooEnvironment');
+  print('🔍 initAuthScope:   - baseURL: ${client.baseURL}');
+  print('🔍 initAuthScope:   - sessionId: ${client.sessionId?.id ?? "NULL"}');
+  print('🔍 initAuthScope:   - httpClient type: ${client.httpClient.runtimeType}');
+  
+  // Si el httpClient es CookieClient, asegurar que tenga la cookie session_id
+  if (client.httpClient is CookieClient) {
+    final cookieClient = client.httpClient as CookieClient;
+    final cookies = cookieClient.getCookies();
+    print('🔍 initAuthScope: CookieClient tiene ${cookies.length} cookies');
+    
+    if (!cookies.containsKey('session_id') || cookies['session_id'] != session.id) {
+      print('⚠️ initAuthScope: ⚠️⚠️⚠️ CookieClient NO tiene session_id correcto');
+      print('⚠️ initAuthScope:   - Session ID esperado: ${session.id}');
+      print('⚠️ initAuthScope:   - Session ID en cookies: ${cookies['session_id'] ?? "NO EXISTE"}');
+      print('🔧 initAuthScope: Agregando session_id al CookieClient...');
+      cookieClient.addCookie('session_id', session.id);
+      print('✅ initAuthScope: session_id agregado al CookieClient');
+    } else {
+      print('✅ initAuthScope: CookieClient tiene session_id correcto');
+    }
   } else {
-    print('✅ initAuthScope: OdooEnvironment ya existe, manteniendo instancia actual');
+    print('⚠️ initAuthScope: OdooClient NO usa CookieClient - tipo: ${client.httpClient.runtimeType}');
   }
 
-  // Repositories
-  if (getIt.isRegistered<PartnerRepository>()) {
-    getIt.unregister<PartnerRepository>();
+  // ⚠️ PROBLEMA: Si OdooEnvironment ya existe, puede tener una sesión incorrecta
+  // Necesitamos recrearlo con la sesión correcta
+  if (getIt.isRegistered<OdooEnvironment>()) {
+    print('⚠️ initAuthScope: OdooEnvironment ya existe - puede tener sesión incorrecta');
+    print('⚠️ initAuthScope: Eliminando OdooEnvironment existente para recrearlo con sesión correcta');
+    final oldEnv = getIt<OdooEnvironment>();
+    print('⚠️ initAuthScope: dbName del Environment antiguo: ${oldEnv.dbName}');
+    print('⚠️ initAuthScope: dbName esperado: ${session.dbName}');
+    
+    // Desregistrar el Environment antiguo (esto llamará a dispose() pero es necesario)
+    getIt.unregister<OdooEnvironment>();
+    print('✅ initAuthScope: OdooEnvironment antiguo eliminado');
   }
-  getIt.registerLazySingleton<PartnerRepository>(
-    () => PartnerRepository(
-        getIt<OdooEnvironment>(),
-        getIt<NetworkConnectivity>(),
-        getIt<CustomOdooKv>(),
-        tenantCache: getIt<TenantAwareCache>()),
-  );
-
-  if (getIt.isRegistered<EmployeeRepository>()) {
-    getIt.unregister<EmployeeRepository>();
-  }
-  getIt.registerLazySingleton<EmployeeRepository>(
-    () => EmployeeRepository(
-        getIt<OdooEnvironment>(),
-        getIt<NetworkConnectivity>(),
-        getIt<CustomOdooKv>(),
-        tenantCache: getIt<TenantAwareCache>()),
-  );
-
-  if (getIt.isRegistered<SaleOrderRepository>()) {
-    getIt.unregister<SaleOrderRepository>();
-  }
-  getIt.registerLazySingleton<SaleOrderRepository>(
-    () => SaleOrderRepository(
-        getIt<OdooEnvironment>(),
-        getIt<NetworkConnectivity>(),
-        getIt<CustomOdooKv>(),
-        tenantCache: getIt<TenantAwareCache>()),
-  );
-
-  if (getIt.isRegistered<ProductRepository>()) {
-    getIt.unregister<ProductRepository>();
-  }
-  getIt.registerLazySingleton<ProductRepository>(
-    () => ProductRepository(
-        getIt<OdooEnvironment>(),
-        getIt<NetworkConnectivity>(),
-        getIt<CustomOdooKv>(),
-        tenantCache: getIt<TenantAwareCache>()),
-  );
-
-  if (getIt.isRegistered<PricelistRepository>()) {
-    getIt.unregister<PricelistRepository>();
-  }
-  getIt.registerLazySingleton<PricelistRepository>(
-    () => PricelistRepository(
-        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
-  );
   
-  if (getIt.isRegistered<TaxRepository>()) {
-    getIt.unregister<TaxRepository>();
-  }
-  getIt.registerLazySingleton<TaxRepository>(
-    () => TaxRepository(
-        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
-  );
+  // Crear nuevo OdooEnvironment con la sesión correcta
+  print('📦 initAuthScope: Creando nuevo OdooEnvironment con sesión correcta');
+  getIt.registerSingleton<OdooEnvironment>(OdooEnvironment(
+    client,  // Usar el cliente ya verificado y actualizado con cookies correctas
+    session.dbName,
+    getIt<CustomOdooKv>(),
+    getIt<NetworkConnectivity>(),
+  ));
+  print('✅ initAuthScope: OdooEnvironment creado con dbName: ${session.dbName}');
   
-  if (getIt.isRegistered<CityRepository>()) {
-    getIt.unregister<CityRepository>();
-  }
-  getIt.registerLazySingleton<CityRepository>(
-    () => CityRepository(
-        getIt<OdooEnvironment>(), getIt<NetworkConnectivity>(), getIt<CustomOdooKv>()),
-  );
+  // ⚠️ CRÍTICO: OdooEnvironment() constructor llama a session/destroy que invalida la sesión
+  // Luego se re-autentica silenciosamente en background. Debemos ESPERAR a que complete
+  // antes de configurar repositories y hacer cacheos, igual que BootstrapCoordinator
+  print('⏳ initAuthScope: Esperando re-autenticación silenciosa después de session/destroy...');
+  await _ensureReauthComplete();
+  print('✅ initAuthScope: Re-autenticación completada, continuando con configuración...');
   
-  print('✅ Repositories configurados correctamente (Partner + Employee + SaleOrder + Product + Pricelist + Tax + City)');
+  // ✅ CRÍTICO: Asegurar que OdooClient tenga sessionId sincronizado después de re-auth
+  // Si la re-auth completó pero el cliente no tiene sessionId, sincronizar desde cookie
+  final clientAfterReauth = getIt<OdooClient>();
+  final cache = getIt<CustomOdooKv>();
+  
+  if (clientAfterReauth.sessionId == null || clientAfterReauth.sessionId!.id.isEmpty) {
+    print('⚠️ initAuthScope: OdooClient no tiene sessionId después de re-auth');
+    
+    // Verificar cookie y actualizar cache si es necesario
+    if (clientAfterReauth.httpClient is CookieClient) {
+      final cookieClient = clientAfterReauth.httpClient as CookieClient;
+      final cookies = cookieClient.getCookies();
+      final cookieSessionId = cookies['session_id'];
+      
+      if (cookieSessionId != null && cookieSessionId.isNotEmpty) {
+        print('⚠️ initAuthScope: Cookie tiene session_id: ${cookieSessionId.substring(0, 8)}...');
+        
+        // Verificar si la cookie coincide con el cache
+        final sessionJson = cache.get(AppConstants.cacheSessionKey) as String?;
+        if (sessionJson != null) {
+          try {
+            final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
+            final cachedSession = OdooSession.fromJson(sessionData);
+            
+            if (cookieSessionId != cachedSession.id) {
+              print('⚠️ initAuthScope: Cookie difiere de sesión en cache - re-auth creó nueva sesión');
+              print('⚠️ initAuthScope: La re-auth silenciosa creará una nueva sesión, esperando...');
+              // No actualizar aquí - la re-auth explícita más abajo lo hará
+            } else {
+              print('✅ initAuthScope: Cookie coincide con sesión en cache');
+            }
+          } catch (e) {
+            print('⚠️ initAuthScope: Error procesando sesión: $e');
+          }
+        }
+        
+        // ⚠️ PROBLEMA: OdooClient.sessionId no se puede establecer manualmente
+        // Necesitamos forzar una llamada authenticate() explícita para sincronizar sessionId
+        print('⚠️ initAuthScope: OdooClient.sessionId aún no está disponible');
+        print('⚠️ initAuthScope: Forzando re-autenticación explícita para sincronizar sessionId...');
+        
+        try {
+          // Obtener credenciales desde cache
+          final username = cache.get('licenseUser') as String?;
+          final password = cache.get('licensePassword') as String?;
+          final database = cache.get('database') as String?;
+          
+          if (username != null && password != null && database != null) {
+            print('⚠️ initAuthScope: Re-autenticando explícitamente...');
+            final newSession = await clientAfterReauth.authenticate(database, username, password);
+            
+            if (newSession != null) {
+              print('✅ initAuthScope: Re-autenticación explícita exitosa');
+              print('   - Nuevo SessionId: ${newSession.id.substring(0, 8)}...');
+              
+              // Actualizar cache con nueva sesión
+              await cache.put(AppConstants.cacheSessionKey, json.encode(newSession.toJson()));
+              
+              // Actualizar singleton en GetIt
+              if (getIt.isRegistered<OdooSession>()) {
+                getIt.unregister<OdooSession>();
+              }
+              getIt.registerSingleton<OdooSession>(newSession);
+              
+              // Verificar que el cliente ahora tiene sessionId
+              if (clientAfterReauth.sessionId != null && clientAfterReauth.sessionId!.id.isNotEmpty) {
+                print('✅ initAuthScope: OdooClient ahora tiene sessionId sincronizado');
+                print('   - SessionId: ${clientAfterReauth.sessionId!.id.substring(0, 8)}...');
+              } else {
+                print('⚠️ initAuthScope: OdooClient aún no tiene sessionId después de authenticate()');
+              }
+            } else {
+              print('⚠️ initAuthScope: authenticate() retornó null');
+            }
+          } else {
+            print('⚠️ initAuthScope: No se encontraron credenciales para re-autenticar');
+          }
+        } catch (e) {
+          print('⚠️ initAuthScope: Error en re-autenticación explícita: $e');
+          print('⚠️ initAuthScope: Continuando de todas formas - las cookies pueden funcionar');
+        }
+      } else {
+        print('⚠️ initAuthScope: No hay session_id en cookies');
+      }
+    }
+  } else {
+    print('✅ initAuthScope: OdooClient tiene sessionId después de re-auth');
+    print('   - SessionId: ${clientAfterReauth.sessionId!.id.substring(0, 8)}...');
+  }
+
+  // ✅ Configurar repositories DESPUÉS de asegurar que OdooEnvironment está correcto
+  // y que la re-autenticación completó
+  // Esto reemplaza la llamada que estaba en _handleAuthenticateResponse
+  _setupRepositories();
 }
 
 

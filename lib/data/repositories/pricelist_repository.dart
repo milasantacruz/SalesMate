@@ -33,27 +33,84 @@ class PricelistRepository extends OfflineOdooRepository<PricelistItem> {
   /// Obtiene los items de una lista de precios específica
   Future<List<PricelistItem>> getPricelistItems(int pricelistId) async {
     try {
+      print('💰 PRICELIST_REPO: ═══════════════════════════════════════════════');
       print('💰 PRICELIST_REPO: Obteniendo items para pricelist $pricelistId...');
+      
+      // Log del dominio que se enviará
+      final domain = [['pricelist_id', '=', pricelistId]];
+      print('💰 PRICELIST_REPO: Dominio enviado: $domain');
+      print('💰 PRICELIST_REPO: Campos solicitados: $oFields');
+      print('💰 PRICELIST_REPO: Modelo: $modelName');
+      
+      print('💰 PRICELIST_REPO: env.orpc disponible, ejecutando callKw...');
       
       final result = await env.orpc.callKw({
         'model': modelName,
         'method': 'search_read',
         'args': [],
         'kwargs': {
-          'domain': [
-            ['pricelist_id', '=', pricelistId]
-          ],
+          'domain': domain,
           'fields': oFields,
           'order': 'min_quantity asc, id asc',
         },
       });
 
-      final items = (result as List).map((item) => fromJson(item)).toList();
-      print('✅ PRICELIST_REPO: ${items.length} items encontrados para pricelist $pricelistId');
+      print('💰 PRICELIST_REPO: Respuesta recibida de Odoo');
+      print('💰 PRICELIST_REPO: Tipo de respuesta: ${result.runtimeType}');
+      print('💰 PRICELIST_REPO: Es null: ${result == null}');
+      
+      if (result == null) {
+        print('⚠️ PRICELIST_REPO: Respuesta es NULL - retornando lista vacía');
+        return [];
+      }
+      
+      if (result is! List) {
+        print('⚠️ PRICELIST_REPO: Respuesta no es List - tipo: ${result.runtimeType}');
+        print('⚠️ PRICELIST_REPO: Contenido: $result');
+        return [];
+      }
+      
+      final resultList = result as List;
+      print('💰 PRICELIST_REPO: Respuesta es List con ${resultList.length} elementos');
+      
+      if (resultList.isEmpty) {
+        print('⚠️ PRICELIST_REPO: ⚠️⚠️⚠️ ADVERTENCIA: Lista vacía recibida de Odoo');
+        print('⚠️ PRICELIST_REPO: Esto puede significar:');
+        print('⚠️ PRICELIST_REPO: 1. La pricelist $pricelistId realmente no tiene items');
+        print('⚠️ PRICELIST_REPO: 2. Problema de permisos o sesión');
+        print('⚠️ PRICELIST_REPO: 3. Error en el dominio de búsqueda');
+        return [];
+      }
+      
+      // Log de los primeros 3 items para debugging
+      print('💰 PRICELIST_REPO: Primeros 3 items recibidos:');
+      for (var i = 0; i < resultList.length && i < 3; i++) {
+        final item = resultList[i];
+        print('💰 PRICELIST_REPO:   Item $i: $item');
+      }
+      
+      final items = resultList.map((item) {
+        try {
+          return fromJson(item);
+        } catch (e) {
+          print('⚠️ PRICELIST_REPO: Error deserializando item: $e');
+          print('⚠️ PRICELIST_REPO: Item problemático: $item');
+          return null;
+        }
+      }).whereType<PricelistItem>().toList();
+      
+      print('✅ PRICELIST_REPO: ${items.length} items deserializados correctamente para pricelist $pricelistId');
+      print('💰 PRICELIST_REPO: ═══════════════════════════════════════════════');
       
       return items;
-    } catch (e) {
-      print('❌ PRICELIST_REPO: Error obteniendo items de pricelist $pricelistId: $e');
+    } catch (e, stackTrace) {
+      print('❌ PRICELIST_REPO: ═══════════════════════════════════════════════');
+      print('❌ PRICELIST_REPO: ERROR obteniendo items de pricelist $pricelistId');
+      print('❌ PRICELIST_REPO: Tipo de error: ${e.runtimeType}');
+      print('❌ PRICELIST_REPO: Mensaje: $e');
+      print('❌ PRICELIST_REPO: Stack trace:');
+      print('❌ PRICELIST_REPO: $stackTrace');
+      print('❌ PRICELIST_REPO: ═══════════════════════════════════════════════');
       return [];
     }
   }
@@ -277,7 +334,10 @@ class PricelistRepository extends OfflineOdooRepository<PricelistItem> {
       // Si no se encontró en cache, intentar desde Odoo (solo si hay conexión)
       if (item == null) {
         final connState = await netConn.checkNetConn();
-        if (connState == netConnState.online) {
+        // Si no hay ítems cacheados y no estamos online, evitar llamadas per-item
+        if (cachedItems.isEmpty && connState != netConnState.online) {
+          print('⚠️ PRICELIST_REPO: Sin cache y sin conexión - evitar RPC por item, usar base');
+        } else if (connState == netConnState.online) {
           // ✅ CORRECCIÓN: Buscar primero por template (más común)
           if (productTmplId != null) {
             item = await getPricelistItemForProductTemplate(tarifaId, productTmplId);

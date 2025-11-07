@@ -14,6 +14,7 @@ import '../../../data/repositories/employee_repository.dart';
 import '../../../data/repositories/pricelist_repository.dart';
 import '../../../data/repositories/tax_repository.dart';
 import '../../../core/network/network_connectivity.dart';
+import '../../../core/http/odoo_client_mobile.dart';
 
 /// BLoC para manejar la autenticación de usuarios
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
@@ -72,7 +73,7 @@ class EmployeePinLoginRequested extends AuthEvent {
         if (sessionJson != null) {
           final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
           final session = OdooSession.fromJson(sessionData);
-          initAuthScope(session);
+          await initAuthScope(session);
         }
         
         print('✅ Sesión válida encontrada para: $username');
@@ -116,7 +117,7 @@ class EmployeePinLoginRequested extends AuthEvent {
         if (sessionJson != null) {
           final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
           final session = OdooSession.fromJson(sessionData);
-          initAuthScope(session);
+          await initAuthScope(session);
         }
         
         print('✅ Login exitoso para: ${event.username}');
@@ -289,6 +290,7 @@ class EmployeePinLoginRequested extends AuthEvent {
             // Ejecutar en background - no bloquear login
             Future.microtask(() async {
               try {
+                print('✅ AUTH_BLOC: Iniciando try');
                 final taxRepo = getIt<TaxRepository>();
                 await taxRepo.cacheTaxes(info.empresaId!);
                 print('✅ AUTH_BLOC: Impuestos cacheados en background para company ${info.empresaId}');
@@ -360,7 +362,119 @@ class EmployeePinLoginRequested extends AuthEvent {
           }
           
           print('✅ AUTH_BLOC: Autenticación con Odoo exitosa');
-          
+
+          // ✅ NUEVO: Inicializar sesión en repositorios ANTES de cachear
+          // Esto asegura que OdooEnvironment se cree con session.dbName correcto
+          // y que los repos tengan sesión válida (igual que en _onLoginRequested)
+          print('🔍 AUTH_BLOC: ═══════════════════════════════════════════════');
+          print('🔍 AUTH_BLOC: Iniciando inicialización de sesión en repositorios...');
+          try {
+            final cache = getIt<CustomOdooKv>();
+            print('🔍 AUTH_BLOC: Cache obtenido correctamente');
+            
+            final sessionJson = cache.get(AppConstants.cacheSessionKey) as String?;
+            print('🔍 AUTH_BLOC: sessionJson obtenido: ${sessionJson != null ? "SÍ (${sessionJson.length} chars)" : "NULL"}');
+            
+            if (sessionJson != null) {
+              print('🔍 AUTH_BLOC: Deserializando sesión desde JSON...');
+              final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
+              print('🔍 AUTH_BLOC: sessionData decodificado - session.id: ${sessionData['id']}');
+              
+              final session = OdooSession.fromJson(sessionData);
+              print('🔍 AUTH_BLOC: OdooSession creada - id: "${session.id}", dbName: "${session.dbName}"');
+              
+              // Verificar estado del OdooClient antes de initAuthScope
+              final clientBefore = getIt<OdooClient>();
+              print('🔍 AUTH_BLOC: OdooClient antes de initAuthScope:');
+              print('🔍 AUTH_BLOC:   - baseURL: ${clientBefore.baseURL}');
+              print('🔍 AUTH_BLOC:   - sessionId: ${clientBefore.sessionId?.id ?? "NULL"}');
+              print('🔍 AUTH_BLOC:   - httpClient type: ${clientBefore.httpClient.runtimeType}');
+              
+              await initAuthScope(session);  // ← Esto inicializa la sesión en los repos y espera re-auth
+              print('✅ AUTH_BLOC: Sesión inicializada en repositorios');
+              
+              // Verificar estado después de initAuthScope
+              final env = getIt<OdooEnvironment>();
+              print('🔍 AUTH_BLOC: OdooEnvironment después de initAuthScope:');
+              print('🔍 AUTH_BLOC:   - dbName: ${env.dbName}');
+              print('🔍 AUTH_BLOC:   - orpc disponible: ${env.orpc != null}');
+              
+              final clientAfter = getIt<OdooClient>();
+              print('🔍 AUTH_BLOC: OdooClient después de initAuthScope:');
+              print('🔍 AUTH_BLOC:   - baseURL: ${clientAfter.baseURL}');
+              print('🔍 AUTH_BLOC:   - sessionId: ${clientAfter.sessionId?.id ?? "NULL"}');
+              
+              // Si el httpClient es CookieClient, verificar cookies
+              if (clientAfter.httpClient is CookieClient) {
+                final cookieClient = clientAfter.httpClient as CookieClient;
+                final cookies = cookieClient.getCookies();
+                print('🔍 AUTH_BLOC: Cookies en CookieClient: ${cookies.length} cookies');
+                if (cookies.containsKey('session_id')) {
+                  print('🔍 AUTH_BLOC:   - session_id cookie: ${cookies['session_id']}');
+                } else {
+                  print('⚠️ AUTH_BLOC:   - ⚠️⚠️⚠️ NO HAY session_id en cookies!');
+                }
+              }
+            } else {
+              print('⚠️ AUTH_BLOC: No se encontró sesión en cache para inicializar');
+              print('⚠️ AUTH_BLOC: Esto significa que loginWithCredentials no guardó la sesión correctamente');
+            }
+            print('🔍 AUTH_BLOC: ═══════════════════════════════════════════════');
+          } catch (e, stackTrace) {
+            print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+            print('❌ AUTH_BLOC: ERROR inicializando sesión: $e');
+            print('❌ AUTH_BLOC: Stack trace: $stackTrace');
+            print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+            // No bloquear el flujo por error de inicialización, pero los cacheos pueden fallar
+          }
+
+          // Cacheos iniciales DESPUÉS de login (repos y sesión ya listos)
+          try {
+            final netConn = getIt<NetworkConnectivity>();
+            final connState = await netConn.checkNetConn();
+            if (connState == netConnState.online) {
+              // Cachear items de tarifa si existe tarifaId
+              if (info.tarifaId != null) {
+                try {
+                  final pricelistRepo = getIt<PricelistRepository>();
+                  print('💰 AUTH_BLOC: Cacheando items de pricelist ${info.tarifaId}...');
+                  await pricelistRepo.cachePricelistItems(info.tarifaId!);
+                  print('✅ AUTH_BLOC: Items de pricelist cacheados tras login');
+                  final kvPl = getIt<CustomOdooKv>();
+                  final verifyPl = kvPl.get('pricelist_items_${info.tarifaId!}');
+                  print('🔍 AUTH_BLOC: Verificación cache pricelist - tipo: ${verifyPl.runtimeType}, es null: ${verifyPl == null}');
+                  if (verifyPl is List) {
+                    print('🔍 AUTH_BLOC: Verificación cache pricelist - items guardados: ${verifyPl.length}');
+                  }
+                } catch (e) {
+                  print('⚠️ AUTH_BLOC: Error cacheando items de pricelist tras login: $e');
+                }
+              }
+
+              // Cachear impuestos si existe empresaId
+              if (info.empresaId != null) {
+                try {
+                  final taxRepo = getIt<TaxRepository>();
+                  print('💰 AUTH_BLOC: Cacheando impuestos company ${info.empresaId}...');
+                  await taxRepo.cacheTaxes(info.empresaId!);
+                  print('✅ AUTH_BLOC: Impuestos cacheados tras login para company ${info.empresaId}');
+                  final kvTx = getIt<CustomOdooKv>();
+                  final verifyTx = kvTx.get('taxes_${info.empresaId!}');
+                  print('🔍 AUTH_BLOC: Verificación cache impuestos - tipo: ${verifyTx.runtimeType}, es null: ${verifyTx == null}');
+                  if (verifyTx is List) {
+                    print('🔍 AUTH_BLOC: Verificación cache impuestos - cantidad guardada: ${verifyTx.length}');
+                  }
+                } catch (e) {
+                  print('⚠️ AUTH_BLOC: Error cacheando impuestos tras login: $e');
+                }
+              }
+            } else {
+              print('⚠️ AUTH_BLOC: Sin conexión tras login - se omite cacheo inicial');
+            }
+          } catch (e) {
+            print('⚠️ AUTH_BLOC: Error general en cacheos post-login: $e');
+          }
+
           // 🚧 TEMPORAL: Desactivar PIN - Siempre ir directo a la app
           // TODO: Reactivar validación de tipoven cuando se necesite PIN
           print('🔓 AUTH_BLOC: [TEMPORAL] PIN desactivado - Login directo');
@@ -515,7 +629,7 @@ class EmployeePinLoginRequested extends AuthEvent {
         if (sessionJson != null) {
           final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
           final session = OdooSession.fromJson(sessionData);
-          initAuthScope(session);
+          await initAuthScope(session);
           print('✅ AUTH_BLOC: OdooSession re-registrado exitosamente');
         } else {
           print('❌ AUTH_BLOC: No se encontró sesión en cache');

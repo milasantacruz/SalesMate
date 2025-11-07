@@ -1,4 +1,3 @@
-import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:odoo_repository/odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
 import '../../core/tenant/tenant_aware_cache.dart';
@@ -9,7 +8,7 @@ import 'operation_queue_repository.dart';
 class SyncCoordinatorRepository {
   final NetworkConnectivity _networkConnectivity;
   final OperationQueueRepository _queueRepository;
-  final OdooClient _odooClient;
+  final OdooEnvironment _env;
   final TenantAwareCache _tenantCache;
   
   /// Callback para notificar cambios de estado
@@ -21,11 +20,11 @@ class SyncCoordinatorRepository {
   SyncCoordinatorRepository({
     required NetworkConnectivity networkConnectivity,
     required OperationQueueRepository queueRepository,
-    required OdooClient odooClient,
+    required OdooEnvironment env,
     required TenantAwareCache tenantCache,
   }) : _networkConnectivity = networkConnectivity,
        _queueRepository = queueRepository,
-       _odooClient = odooClient,
+       _env = env,
        _tenantCache = tenantCache;
 
   /// Verifica si hay conexión a internet
@@ -47,6 +46,12 @@ class SyncCoordinatorRepository {
       final dbg = _tenantCache.getDebugInfo();
       print('🧭 SYNC_COORDINATOR: Tenant actual=${dbg['currentTenant']}, keysTenant=${dbg['currentTenantKeys']}, totalKeys=${dbg['totalKeys']}');
     } catch (_) {}
+    
+    // 🔍 DEBUG: Verificar estado de OdooEnvironment antes de sincronizar
+    print('🔍 SYNC_COORDINATOR: Verificando OdooEnvironment antes de sincronizar...');
+    print('🔍 SYNC_COORDINATOR:   - dbName: ${_env.dbName}');
+    print('🔍 SYNC_COORDINATOR:   - orpc.baseURL: ${_env.orpc.baseURL}');
+    print('🔍 SYNC_COORDINATOR:   - orpc.runtimeType: ${_env.orpc.runtimeType}');
     
     if (!await isOnline()) {
       print('📱 SYNC_COORDINATOR: Sin conexión - cancelando sincronización');
@@ -250,6 +255,15 @@ class SyncCoordinatorRepository {
   /// Sincroniza una operación de creación
   Future<bool> _syncCreateOperation(PendingOperation operation) async {
     try {
+      // 🔍 DEBUG: Verificar estado de OdooEnvironment antes de sincronizar
+      print('🔍 SYNC_COORDINATOR: Verificando OdooEnvironment antes de sincronizar...');
+      print('🔍 SYNC_COORDINATOR:   - dbName: ${_env.dbName}');
+      print('🔍 SYNC_COORDINATOR:   - orpc.baseURL: ${_env.orpc.baseURL}');
+      print('🔍 SYNC_COORDINATOR:   - orpc.runtimeType: ${_env.orpc.runtimeType}');
+      
+      // Verificar si orpc está disponible
+      print('🔍 SYNC_COORDINATOR:   - orpc disponible: true');
+      
       // Eliminar ID temporal antes de enviar (si existe)
       final createData = Map<String, dynamic>.from(operation.data);
       int? tempId;
@@ -272,7 +286,10 @@ class SyncCoordinatorRepository {
         print('🧹 SYNC_COORDINATOR: Campos de enriquecimiento removidos para sale.order');
       }
       
-      final result = await _odooClient.callKw({
+      print('🚀 SYNC_COORDINATOR: Llamando env.orpc.callKw() para ${operation.model}.create...');
+      print('🚀 SYNC_COORDINATOR: URL base que se usará: ${_env.orpc.baseURL}');
+      
+      final result = await _env.orpc.callKw({
         'model': operation.model,
         'method': 'create',
         'args': [createData],
@@ -350,7 +367,7 @@ class SyncCoordinatorRepository {
       print('🔄 SYNC_COORDINATOR: Actualizando cache local con dirección $addressId${tempId != null ? " (tempId: $tempId)" : ""}');
       
       // Leer la dirección recién creada del servidor
-      final readResponse = await _odooClient.callKw({
+      final readResponse = await _env.orpc.callKw({
         'model': 'res.partner',
         'method': 'read',
         'args': [[addressId]],
@@ -368,7 +385,7 @@ class SyncCoordinatorRepository {
         final cachedData = _tenantCache.get('ShippingAddress_records', 
           defaultValue: <Map<String, dynamic>>[]);
         final List<Map<String, dynamic>> currentAddresses = cachedData is List
-            ? List<Map<String, dynamic>>.from((cachedData as List).map((e) => Map<String, dynamic>.from(e as Map)))
+            ? List<Map<String, dynamic>>.from(cachedData.map((e) => Map<String, dynamic>.from(e as Map)))
             : [];
         
         // ✅ INCREMENTO 2: Si hay tempId, buscar y reemplazar ID temporal
@@ -454,7 +471,7 @@ class SyncCoordinatorRepository {
       final updateData = Map<String, dynamic>.from(operation.data);
       updateData.remove('id');
       
-      final result = await _odooClient.callKw({
+      final result = await _env.orpc.callKw({
         'model': operation.model,
         'method': 'write',
         'args': [[recordId], updateData],
@@ -485,7 +502,7 @@ class SyncCoordinatorRepository {
         return false;
       }
       
-      final result = await _odooClient.callKw({
+      final result = await _env.orpc.callKw({
         'model': operation.model,
         'method': 'unlink',
         'args': [[recordId]],
