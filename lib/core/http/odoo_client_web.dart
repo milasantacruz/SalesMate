@@ -1,5 +1,7 @@
-import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:http/browser_client.dart';
+import 'package:odoo_rpc/odoo_rpc.dart';
+
+import 'scoped_odoo_client.dart';
 
 /// Implementación para plataformas web con soporte CORS completo
 OdooClient createClient(String baseUrl) {
@@ -11,7 +13,7 @@ OdooClient createClient(String baseUrl) {
   final browserClient = BrowserClient()..withCredentials = true;
   
   // Crear cliente Odoo con configuración web
-  final client = OdooClient(
+  final client = ScopedOdooClient(
     baseUrl,
     httpClient: browserClient,
     isWebPlatform: true,  // CRÍTICO: Indicar que es plataforma web

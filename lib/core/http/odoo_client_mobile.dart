@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 
+import 'scoped_odoo_client.dart';
+
 /// Cliente HTTP personalizado que maneja cookies manualmente para Android
 class CookieClient extends http.BaseClient {
   final http.Client _inner = http.Client();
@@ -45,25 +47,9 @@ class CookieClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    // 🔧 FIX: Corregir endpoint de /web/dataset/call_kw a /xmlrpc/2/object
-    // El paquete odoo_rpc está usando incorrectamente el endpoint web
+    // Si detectamos una llamada a call_kw, simplemente registramos para diagnóstico
     if (request.url.path.contains('/web/dataset/call_kw')) {
-      final originalUrl = request.url;
-      final correctedPath = request.url.path.replaceAll('/web/dataset/call_kw', '/xmlrpc/2/object');
-      final correctedUrl = Uri(
-        scheme: originalUrl.scheme,
-        host: originalUrl.host,
-        port: originalUrl.port,
-        path: correctedPath,
-        query: originalUrl.query,
-        fragment: originalUrl.fragment,
-      );
-      print('🔧 COOKIE_CLIENT: Corrigiendo endpoint de ${originalUrl.path} a ${correctedPath}');
-      print('🔧 COOKIE_CLIENT: URL original: ${originalUrl}');
-      print('🔧 COOKIE_CLIENT: URL corregida: ${correctedUrl}');
-      
-      // Crear un nuevo request con la URL corregida
-      request = _createRequestWithNewUrl(request, correctedUrl);
+      print('⚠️ COOKIE_CLIENT: call_kw detectado, manteniendo endpoint JSON-RPC original.');
     }
     
     // print('🚀 ANDROID: Iniciando request a ${request.url}');
@@ -120,7 +106,7 @@ class CookieClient extends http.BaseClient {
         if (response.statusCode == 401) {
           print('🔑 LICENSE_RESPONSE: ❌ ERROR 401 CONFIRMADO - Cookies interfieren');
         } else {
-          print('🔑 LICENSE_RESPONSE: ✅ Petición exitosa');
+        print('🔑 LICENSE_RESPONSE: ✅ Petición exitosa');
         }
       }
       
@@ -221,7 +207,7 @@ class CookieClient extends http.BaseClient {
               isRedirect: response.isRedirect,
               persistentConnection: response.persistentConnection,
               reasonPhrase: response.reasonPhrase,
-            );
+          );
             
             // Extraer cookies antes de devolver
             final setCookie = newResponse.headers['set-cookie'];
@@ -280,37 +266,6 @@ class CookieClient extends http.BaseClient {
     }
   }
 
-  /// Crea un nuevo request con una URL diferente, preservando todas las propiedades
-  http.BaseRequest _createRequestWithNewUrl(http.BaseRequest original, Uri newUrl) {
-    if (original is http.Request) {
-      return http.Request(original.method, newUrl)
-        ..headers.addAll(original.headers)
-        ..body = original.body
-        ..encoding = original.encoding;
-    } else if (original is http.StreamedRequest) {
-      final newRequest = http.StreamedRequest(original.method, newUrl)
-        ..headers.addAll(original.headers)
-        ..contentLength = original.contentLength
-        ..followRedirects = original.followRedirects
-        ..maxRedirects = original.maxRedirects
-        ..persistentConnection = original.persistentConnection;
-      
-      // Copiar el stream del body original
-      original.finalize().listen(
-        (data) => newRequest.sink.add(data),
-        onError: (error) => newRequest.sink.addError(error),
-        onDone: () => newRequest.sink.close(),
-        cancelOnError: true,
-      );
-      
-      return newRequest;
-    } else {
-      // Para otros tipos de request, intentar crear uno básico
-      return http.Request(original.method, newUrl)
-        ..headers.addAll(original.headers);
-    }
-  }
-
   void _parseCookies(String setCookieHeader) {
     final cookies = setCookieHeader.split(',');
     for (final cookie in cookies) {
@@ -339,7 +294,7 @@ OdooClient createClient(String baseUrl) {
   
   // Crear cliente con manejo manual de cookies para Android
   final cookieClient = CookieClient();
-  final client = OdooClient(baseUrl, httpClient: cookieClient);
+  final client = ScopedOdooClient(baseUrl, httpClient: cookieClient);
   
   print('✅ Cliente móvil creado exitosamente con soporte para cookies');
   print('🔍 Cliente tipo: ${client.runtimeType}');
