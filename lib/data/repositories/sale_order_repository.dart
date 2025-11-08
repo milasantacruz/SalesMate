@@ -167,6 +167,12 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     if (_state != null && _state!.isNotEmpty) {
       domain.add(['state', '=', _state]);
     }
+
+    final activeUserId = _getActiveUserId();
+    if (activeUserId != null) {
+      domain.add(['user_id', '=', activeUserId]);
+      print('👤 SALE_ORDER_REPO: Dominio filtrado por user_id=$activeUserId');
+    }
     
     return domain;
   }
@@ -359,7 +365,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       
       if (cachedData != null) {
         
-        // ✅ NORMALIZACIÓN: Detectar y normalizar orden_lines como String en cache antigua
+        // ✅ NORMALIZACIÓN: Detectar y normalizar order_lines como String en cache antigua
         bool needsCacheUpdate = false;
         final normalizedData = <dynamic>[];
         
@@ -589,7 +595,7 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       final shippingId = enriched['partner_shipping_id'] as int;
       final shippingName = enriched['partner_shipping_name'] as String? ?? 'Unknown Address';
       enriched['partner_shipping_id'] = [shippingId, shippingName];
-      print('🔧 SALE_ORDER: Enriquecido partner_shipping_id: $shippingId → [$shippingId, $shippingName]');
+      print('🔧 SALE_ORDER_REPO: Enriquecido partner_shipping_id: $shippingId → [$shippingId, $shippingName]');
     }
     
     // Enriquecer user_id
@@ -1063,7 +1069,30 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
       return null;
     }
   }
-  
+
+  int? _getActiveUserId() {
+    try {
+      final kv = getIt<CustomOdooKv>();
+      final userIdStr = kv.get('userId');
+      if (userIdStr == null) {
+        return null;
+      }
+      final cachedUserId = int.tryParse(userIdStr.toString());
+      if (cachedUserId == null) {
+        return null;
+      }
+      final sessionUserId = getIt<OdooSession>().userId;
+      if (cachedUserId == sessionUserId) {
+        // Fallback (admin) -> sin filtro para ver todo
+        return null;
+      }
+      return cachedUserId;
+    } catch (e) {
+      print('⚠️ SALE_ORDER_REPO: Error obteniendo userId activo: $e');
+      return null;
+    }
+  }
+
   /// Fallback: cálculo local de totales
   OrderTotals _calculateLocalTotals(List<SaleOrderLine> orderLines) {
     final subtotal = orderLines.fold(0.0, (sum, line) => sum + line.subtotal);

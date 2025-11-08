@@ -31,6 +31,7 @@ import '../tenant/tenant_admin_service.dart';
 import '../tenant/tenant_context.dart';
 import '../http/odoo_client_mobile.dart'; // ← Importar CookieClient
 import '../http/scoped_odoo_client.dart';
+import '../audit/audit_event_service.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -56,6 +57,10 @@ Future<void> init() async {
   
   getIt.registerLazySingleton<TenantAdminService>(
     () => TenantAdminService(getIt<TenantAwareCache>())
+  );
+
+  getIt.registerLazySingleton<AuditEventService>(
+    () => AuditEventService(getIt<TenantAwareCache>())
   );
 
   // Inicializar OperationQueueRepository
@@ -159,11 +164,11 @@ Future<bool> loginWithCredentials({
       
       print('🔍 RAW authenticate response received');
       print('🤖 ANDROID DEBUG - Respuesta detallada:');
-      print('   - Session.id: "${session.id}"');
-      print('   - Session.userId: ${session.userId}');
-      print('   - Session.userName: "${session.userName}"');
-      print('   - Session.userLogin: "${session.userLogin}"');
-      print('   - Session.isSystem: ${session.isSystem}');
+        print('   - Session.id: "${session.id}"');
+        print('   - Session.userId: ${session.userId}');
+        print('   - Session.userName: "${session.userName}"');
+        print('   - Session.userLogin: "${session.userLogin}"');
+        print('   - Session.isSystem: ${session.isSystem}');
       print('🔍 Client después de authenticate:');
       print('   SessionId: ${client.sessionId}');
       print('   Cookies: ${client.sessionId != null ? "Sesión activa" : "Sin sesión"}');
@@ -270,13 +275,15 @@ int? _parseCompanyId(dynamic raw) {
 }
 
 void _applyCompanyScopeToClient(OdooClient client, CustomOdooKv cache) {
-  if (client is! ScopedOdooClient) {
-    return;
-  }
+  if (client is ScopedOdooClient) {
+    final rawCompanyId = cache.get('companyId');
+    final companyId = _parseCompanyId(rawCompanyId);
+    client.setCompanyScope(companyId);
 
-  final rawCompanyId = cache.get('companyId');
-  final companyId = _parseCompanyId(rawCompanyId);
-  client.setCompanyScope(companyId);
+    final rawUserId = cache.get('userId');
+    final userId = _parseCompanyId(rawUserId);
+    client.setUserScope(userId);
+  }
 }
 
 /// Función legacy mantenida por compatibilidad (ahora usa credenciales por defecto)
@@ -341,9 +348,9 @@ Future<void> logout() async {
       final client = getIt<OdooClient>();
       if (client.httpClient is CookieClient) {
         final cookieClient = client.httpClient as CookieClient;
-        cookieClient.clearCookies();
-        print('🧹 DEBUG FASE 1: ✅ Cookies del CookieClient limpiadas');
-        cookieClient.debugCookies();
+          cookieClient.clearCookies();
+          print('🧹 DEBUG FASE 1: ✅ Cookies del CookieClient limpiadas');
+          cookieClient.debugCookies();
       } else {
         print('🧹 DEBUG FASE 1: ⚠️ Cliente no es CookieClient: ${client.httpClient.runtimeType}');
       }
@@ -691,13 +698,13 @@ Future<void> _reAuthenticateSilently() async {
     // Re-autenticar
     final session = await client.authenticate(database, username, password);
     
-    print('✅ Re-auth: Sesión restaurada exitosamente');
-    print('   - Session ID: ${session.id}');
-    print('   - User: ${session.userName}');
-    
-    // Guardar sesión actualizada en cache
-    cache.put(AppConstants.cacheSessionKey, json.encode(session.toJson()));
-    print('💾 Re-auth: Sesión guardada en cache');
+      print('✅ Re-auth: Sesión restaurada exitosamente');
+      print('   - Session ID: ${session.id}');
+      print('   - User: ${session.userName}');
+      
+      // Guardar sesión actualizada en cache
+      cache.put(AppConstants.cacheSessionKey, json.encode(session.toJson()));
+      print('💾 Re-auth: Sesión guardada en cache');
   } catch (e, stackTrace) {
     print('❌ Re-auth: Error durante re-autenticación: $e');
     print('   Stack trace: $stackTrace');
@@ -764,129 +771,129 @@ Future<bool> _handleAuthenticateResponse(
   print('   User ID: ${session.userId}');
   print('   Username: ${session.userName}');
   
-  print('✅ Login exitoso! User ID: ${session.userId}');
-  print('👤 Username: ${session.userName}');
-  
-  // ✅ NUEVO v2.0: Detectar cambio de licencia y limpiar cache anterior
-  if (licenseNumber != null && licenseNumber.isNotEmpty) {
-    print('🏢 TENANT: Procesando tenant para licencia: $licenseNumber');
+    print('✅ Login exitoso! User ID: ${session.userId}');
+    print('👤 Username: ${session.userName}');
     
-    final previousLicense = TenantContext.setTenant(
-      licenseNumber,
-      database ?? AppConstants.odooDbName,
-    );
-    
-    if (previousLicense != null) {
-      // ⚠️ Cambio de licencia detectado - Limpiar cache anterior
-      print('🔄 LOGIN: Cambio de licencia detectado: $previousLicense → $licenseNumber');
-      print('🧹 LOGIN: Limpiando cache de licencia anterior...');
+    // ✅ NUEVO v2.0: Detectar cambio de licencia y limpiar cache anterior
+    if (licenseNumber != null && licenseNumber.isNotEmpty) {
+      print('🏢 TENANT: Procesando tenant para licencia: $licenseNumber');
       
-      final tenantCache = getIt<TenantAwareCache>();
-      await tenantCache.clearTenant(previousLicense);
+      final previousLicense = TenantContext.setTenant(
+        licenseNumber,
+        database ?? AppConstants.odooDbName,
+      );
       
-      print('✅ LOGIN: Cache de $previousLicense eliminado completamente');
-      print('📦 LOGIN: Ahora se hará bootstrap completo para $licenseNumber');
+      if (previousLicense != null) {
+        // ⚠️ Cambio de licencia detectado - Limpiar cache anterior
+        print('🔄 LOGIN: Cambio de licencia detectado: $previousLicense → $licenseNumber');
+        print('🧹 LOGIN: Limpiando cache de licencia anterior...');
+        
+        final tenantCache = getIt<TenantAwareCache>();
+        await tenantCache.clearTenant(previousLicense);
+        
+        print('✅ LOGIN: Cache de $previousLicense eliminado completamente');
+        print('📦 LOGIN: Ahora se hará bootstrap completo para $licenseNumber');
+      } else {
+        print('✅ LOGIN: Misma licencia ($licenseNumber) - Cache preservado');
+      }
+      
+      // Guardar licenseNumber en cache para referencia
+      await cache.put('licenseNumber', licenseNumber);
     } else {
-      print('✅ LOGIN: Misma licencia ($licenseNumber) - Cache preservado');
+      print('⚠️ LOGIN: No se proporcionó licenseNumber - Tenant management deshabilitado');
     }
     
-    // Guardar licenseNumber en cache para referencia
-    await cache.put('licenseNumber', licenseNumber);
-  } else {
-    print('⚠️ LOGIN: No se proporcionó licenseNumber - Tenant management deshabilitado');
-  }
-  
-  // VALIDACIÓN ESTRICTA: El servidor DEBE retornar session_id válido
-  if (session.id.isEmpty) {
-    print('🚨 ERROR: Session ID vacío - servidor no configurado correctamente');
-    print('❌ FALLO: El servidor debe incluir session_id en la respuesta');
-    print('🎯 ACCIÓN REQUERIDA: Configurar /web/session/authenticate en el servidor');
-    print('📋 Ver requerimiento técnico para el backend');
-    return false; // FALLO EXPLÍCITO - no continuar sin session válido
-  }
-  
-  // Session ID válido - continuar normalmente
-  final sessionJson = json.encode(session.toJson());
-  await cache.put(AppConstants.cacheSessionKey, sessionJson);
-  await cache.put('username', username);
-  await cache.put('database', database ?? AppConstants.odooDbName);
-  
-  print('✅ Sesión completa guardada en caché.');
-  
-  print('✅ Session ID válido: ${session.id}');
-  print('🔍 Client sessionId: ${client.sessionId}');
-  print('🔍 Client sessionId ID: ${client.sessionId?.id}');
-  
-  // PROBLEMA IDENTIFICADO: El cliente no está usando la sesión correctamente
-  // Necesitamos verificar si el cliente tiene la sesión activa
-  print('🔍 VERIFICACIÓN DE SESIÓN EN CLIENTE:');
-  print('   - Cliente tiene sesión: ${client.sessionId != null}');
-  print('   - Sesión del cliente: ${client.sessionId}');
-  print('   - ID de sesión del cliente: ${client.sessionId?.id}');
-  print('   - Sesión recibida: ${session.id}');
-  print('   - ¿Son iguales?: ${client.sessionId?.id == session.id}');
-  
-  // Si las sesiones no coinciden, hay un problema
-  if (client.sessionId?.id != session.id) {
-    print('⚠️ PROBLEMA: La sesión del cliente no coincide con la sesión recibida');
-    print('   - Esto puede causar "Session Expired" en llamadas posteriores');
-    print('   - SOLUCIÓN: El cliente móvil ahora maneja cookies automáticamente');
-    print('   - Las cookies se enviarán en todas las requests posteriores');
-  }
-  
-  // ⚠️ NO recrear OdooEnvironment inmediatamente - registrar factory lazy
-  // Esto evita que se llame a session/destroy inmediatamente después del login
-  print('⏭️ Registrando factory de Environment (creación diferida)...');
-  
-  // Registrar el factory si no existe
-  if (!getIt.isRegistered<OdooEnvironment>()) {
-    // Variable para almacenar la instancia después de re-autenticación
-    OdooEnvironment? environmentInstance;
+    // VALIDACIÓN ESTRICTA: El servidor DEBE retornar session_id válido
+    if (session.id.isEmpty) {
+      print('🚨 ERROR: Session ID vacío - servidor no configurado correctamente');
+      print('❌ FALLO: El servidor debe incluir session_id en la respuesta');
+      print('🎯 ACCIÓN REQUERIDA: Configurar /web/session/authenticate en el servidor');
+      print('📋 Ver requerimiento técnico para el backend');
+      return false; // FALLO EXPLÍCITO - no continuar sin session válido
+    }
     
-    getIt.registerLazySingleton<OdooEnvironment>(
-      () {
-        if (environmentInstance != null) {
-          return environmentInstance!;
-        }
-        
-        print('🏗️ OdooEnvironment: Creación LAZY iniciada por primer uso');
-        final client = getIt<OdooClient>();
-        final netConn = getIt<NetworkConnectivity>();
-        final cache = getIt<CustomOdooKv>();
-        
-        // Crear environment (esto llamará a session/destroy)
-        final env = OdooEnvironment(
-          client,
-          AppConstants.odooDbName,
-          cache,
-          netConn,
-        );
-        
-        print('✅ OdooEnvironment: Instancia creada');
-        
-      // 🔄 Re-autenticación silenciosa después de session/destroy (fire-and-forget)
-      print('🔄 Iniciando re-autenticación silenciosa en background...');
-      SessionReadyCoordinator.startReauthentication();
-      _reAuthenticateSilently().then((_) {
-        print('✅ Re-autenticación completada');
-      }).catchError((e) {
-        print('⚠️ Re-autenticación falló (continuando de todas formas): $e');
-      }).whenComplete(() {
-        SessionReadyCoordinator.completeReauthentication();
-      });
-        
-        environmentInstance = env;
-        return env;
-      },
-    );
-    print('✅ Factory de OdooEnvironment registrado (creación diferida)');
-  }
-  
+    // Session ID válido - continuar normalmente
+    final sessionJson = json.encode(session.toJson());
+    await cache.put(AppConstants.cacheSessionKey, sessionJson);
+    await cache.put('username', username);
+    await cache.put('database', database ?? AppConstants.odooDbName);
+    
+    print('✅ Sesión completa guardada en caché.');
+    
+    print('✅ Session ID válido: ${session.id}');
+    print('🔍 Client sessionId: ${client.sessionId}');
+    print('🔍 Client sessionId ID: ${client.sessionId?.id}');
+    
+    // PROBLEMA IDENTIFICADO: El cliente no está usando la sesión correctamente
+    // Necesitamos verificar si el cliente tiene la sesión activa
+    print('🔍 VERIFICACIÓN DE SESIÓN EN CLIENTE:');
+    print('   - Cliente tiene sesión: ${client.sessionId != null}');
+    print('   - Sesión del cliente: ${client.sessionId}');
+    print('   - ID de sesión del cliente: ${client.sessionId?.id}');
+    print('   - Sesión recibida: ${session.id}');
+    print('   - ¿Son iguales?: ${client.sessionId?.id == session.id}');
+    
+    // Si las sesiones no coinciden, hay un problema
+    if (client.sessionId?.id != session.id) {
+      print('⚠️ PROBLEMA: La sesión del cliente no coincide con la sesión recibida');
+      print('   - Esto puede causar "Session Expired" en llamadas posteriores');
+      print('   - SOLUCIÓN: El cliente móvil ahora maneja cookies automáticamente');
+      print('   - Las cookies se enviarán en todas las requests posteriores');
+    }
+    
+    // ⚠️ NO recrear OdooEnvironment inmediatamente - registrar factory lazy
+    // Esto evita que se llame a session/destroy inmediatamente después del login
+    print('⏭️ Registrando factory de Environment (creación diferida)...');
+    
+    // Registrar el factory si no existe
+    if (!getIt.isRegistered<OdooEnvironment>()) {
+      // Variable para almacenar la instancia después de re-autenticación
+      OdooEnvironment? environmentInstance;
+      
+      getIt.registerLazySingleton<OdooEnvironment>(
+        () {
+          if (environmentInstance != null) {
+            return environmentInstance!;
+          }
+          
+          print('🏗️ OdooEnvironment: Creación LAZY iniciada por primer uso');
+          final client = getIt<OdooClient>();
+          final netConn = getIt<NetworkConnectivity>();
+          final cache = getIt<CustomOdooKv>();
+          
+          // Crear environment (esto llamará a session/destroy)
+          final env = OdooEnvironment(
+            client,
+            AppConstants.odooDbName,
+            cache,
+            netConn,
+          );
+          
+          print('✅ OdooEnvironment: Instancia creada');
+          
+        // 🔄 Re-autenticación silenciosa después de session/destroy (fire-and-forget)
+        print('🔄 Iniciando re-autenticación silenciosa en background...');
+        SessionReadyCoordinator.startReauthentication();
+        _reAuthenticateSilently().then((_) {
+          print('✅ Re-autenticación completada');
+        }).catchError((e) {
+          print('⚠️ Re-autenticación falló (continuando de todas formas): $e');
+        }).whenComplete(() {
+          SessionReadyCoordinator.completeReauthentication();
+        });
+          
+          environmentInstance = env;
+          return env;
+        },
+      );
+      print('✅ Factory de OdooEnvironment registrado (creación diferida)');
+    }
+    
   // ⚠️ NO llamar _setupRepositories aquí porque fuerza la creación de OdooEnvironment
   // Los repositorios se configurarán en initAuthScope() que se llama después del login
   // Esto evita que OdooEnvironment se cree antes de tener la sesión correcta inicializada
-  
-  return true;
+    
+    return true;
 }
 
 /// Espera a que la re-autenticación silenciosa complete después de crear OdooEnvironment
@@ -1064,12 +1071,12 @@ Future<void> initAuthScope(OdooSession session) async {
   
   // Crear nuevo OdooEnvironment con la sesión correcta
   print('📦 initAuthScope: Creando nuevo OdooEnvironment con sesión correcta');
-  getIt.registerSingleton<OdooEnvironment>(OdooEnvironment(
+    getIt.registerSingleton<OdooEnvironment>(OdooEnvironment(
     client,  // Usar el cliente ya verificado y actualizado con cookies correctas
-    session.dbName,
-    getIt<CustomOdooKv>(),
-    getIt<NetworkConnectivity>(),
-  ));
+      session.dbName,
+      getIt<CustomOdooKv>(),
+      getIt<NetworkConnectivity>(),
+    ));
   print('✅ initAuthScope: OdooEnvironment creado con dbName: ${session.dbName}');
   
   // ⚠️ CRÍTICO: OdooEnvironment() constructor llama a session/destroy que invalida la sesión
@@ -1107,7 +1114,7 @@ Future<void> initAuthScope(OdooSession session) async {
               print('⚠️ initAuthScope: Cookie difiere de sesión en cache - re-auth creó nueva sesión');
               print('⚠️ initAuthScope: La re-auth silenciosa creará una nueva sesión, esperando...');
               // No actualizar aquí - la re-auth explícita más abajo lo hará
-            } else {
+  } else {
               print('✅ initAuthScope: Cookie coincide con sesión en cache');
             }
           } catch (e) {

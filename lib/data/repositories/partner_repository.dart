@@ -36,15 +36,16 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
     print('🔍 PARTNER_REPO: Iniciando callKw...');
     
     try {
+      final domain = List<dynamic>.from(oDomain);
+      // No filtramos por user_id porque res.partner suele tener user_id=false.
       final response = await env.orpc.callKw({
         'model': modelName,
         'method': 'search_read',
         'args': [],
         'kwargs': {
           'context': {'bin_size': true},
-          'domain': oDomain,
+          'domain': domain,
           'fields': oFields,
-         // 'limit': 80,
           'offset': 0,
           'order': 'name'
         },
@@ -64,21 +65,23 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
     }
   }
 
-  @override
   Future<List<Map<String, dynamic>>> fetchIncrementalRecords(String since) async {
     print('🔄 PARTNER_REPO: Fetch incremental desde $since');
     
+    final domain = [
+      ['active', '=', true],
+      ['type', '=', 'contact'],
+      ['write_date', '>', since],
+    ];
+    // No filtramos por user_id porque res.partner suele tener user_id=false.
+
     final response = await env.orpc.callKw({
       'model': modelName,
       'method': 'search_read',
       'args': [],
       'kwargs': {
         'context': {'bin_size': true},
-        'domain': [
-          ['active', '=', true],
-          ['type', '=', 'contact'],
-          ['write_date', '>', since], // 👈 Filtro de fecha incremental
-        ],
+        'domain': domain,
         'fields': oFields,
         'limit': 1000, // Alto límite (usualmente pocos cambios)
         'offset': 0,
@@ -297,9 +300,15 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
           // Obtener direcciones del cache
           final cachedData = tenantCache!.get('ShippingAddress_records', 
             defaultValue: <Map<String, dynamic>>[]);
-          final List<Partner> currentAddresses = cachedData is List
-              ? (cachedData as List).map((json) => Partner.fromJson(Map<String, dynamic>.from(json))).toList()
-              : [];
+          final List<Partner> currentAddresses = [];
+          if (cachedData is List) {
+            for (final item in cachedData) {
+              if (item is Map) {
+                currentAddresses.add(
+                    Partner.fromJson(Map<String, dynamic>.from(item)));
+              }
+            }
+          }
           
           // Agregar la nueva dirección
           currentAddresses.add(newAddress);

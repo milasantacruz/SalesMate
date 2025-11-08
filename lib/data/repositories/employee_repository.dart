@@ -76,10 +76,36 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
 
   /// Valida el PIN de empleado y retorna el empleado si es único
   Future<Employee?> validatePin(String pin) async {
-    final matches = await findByPin(pin);
-    if (matches.isEmpty) return null;
-    if (matches.length == 1) return matches.first;
-    // Si hay múltiples, el caller debe resolver desambiguación
+    try {
+      final matches = await findByPin(pin);
+      if (matches.length == 1) {
+        return matches.first;
+      }
+      if (matches.length > 1) {
+        print('⚠️ EMPLOYEE_REPO: PIN $pin devolvió múltiples coincidencias en servidor (${matches.length})');
+        return null;
+      }
+    } catch (e) {
+      print('⚠️ EMPLOYEE_REPO: Error validando PIN en servidor: $e');
+    }
+
+    // Fallback offline: buscar en registros cacheados
+    try {
+      if (latestRecords.isEmpty) {
+        await fetchRecords();
+      }
+    } catch (e) {
+      print('⚠️ EMPLOYEE_REPO: Error cargando registros para fallback offline: $e');
+    }
+
+    final offlineMatches = latestRecords.where((employee) => employee.pin == pin).toList();
+    if (offlineMatches.length == 1) {
+      print('✅ EMPLOYEE_REPO: PIN $pin validado usando cache offline');
+      return offlineMatches.first;
+    }
+    if (offlineMatches.length > 1) {
+      print('⚠️ EMPLOYEE_REPO: PIN $pin tiene múltiples coincidencias en cache (${offlineMatches.length})');
+    }
     return null;
   }
 
@@ -182,7 +208,6 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
     await _callQueue.deleteRecord(modelName, id);
   }
 
-  @override
   Future<List<Map<String, dynamic>>> fetchIncrementalRecords(String since) async {
     print('🔄 EMPLOYEE_REPO: Fetch incremental desde $since');
     

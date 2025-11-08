@@ -1,4 +1,9 @@
+import 'dart:async';
+
 import 'package:hive_flutter/hive_flutter.dart';
+
+import '../../core/audit/audit_event_service.dart';
+import '../../core/di/injection_container.dart';
 import '../models/pending_operation_model.dart';
 
 /// Repository para manejar la cola de operaciones offline
@@ -28,8 +33,31 @@ class OperationQueueRepository {
       await _saveOperations(operations);
       
       print('📋 QUEUE_REPO: Operación agregada - ${operation.operation} ${operation.model} (${operations.length} total)');
+      unawaited(
+        getIt<AuditEventService>().recordInfo(
+          category: 'queue',
+          message: 'Operación offline agregada',
+          metadata: {
+            'operationId': operation.id,
+            'operation': operation.operation,
+            'model': operation.model,
+            'status': operation.status.name,
+          },
+        ),
+      );
     } catch (e) {
       print('❌ QUEUE_REPO: Error agregando operación: $e');
+      unawaited(
+        getIt<AuditEventService>().recordError(
+          category: 'queue',
+          message: 'Error agregando operación offline',
+          metadata: {
+            'error': e.toString(),
+            'operation': operation.operation,
+            'model': operation.model,
+          },
+        ),
+      );
       rethrow;
     }
   }
@@ -84,11 +112,43 @@ class OperationQueueRepository {
         operations[index] = operation;
         await _saveOperations(operations);
         print('📋 QUEUE_REPO: Operación actualizada - ${operation.id}');
+        unawaited(
+          getIt<AuditEventService>().recordInfo(
+            category: 'queue',
+            message: 'Operación offline actualizada',
+            metadata: {
+              'operationId': operation.id,
+              'operation': operation.operation,
+              'model': operation.model,
+              'status': operation.status.name,
+              'retryCount': operation.retryCount,
+            },
+          ),
+        );
       } else {
         print('⚠️ QUEUE_REPO: Operación no encontrada para actualizar - ${operation.id}');
+        unawaited(
+          getIt<AuditEventService>().recordWarning(
+            category: 'queue',
+            message: 'Operación no encontrada al actualizar',
+            metadata: {
+              'operationId': operation.id,
+            },
+          ),
+        );
       }
     } catch (e) {
       print('❌ QUEUE_REPO: Error actualizando operación: $e');
+      unawaited(
+        getIt<AuditEventService>().recordError(
+          category: 'queue',
+          message: 'Error actualizando operación offline',
+          metadata: {
+            'operationId': operation.id,
+            'error': e.toString(),
+          },
+        ),
+      );
       rethrow;
     }
   }
@@ -101,8 +161,27 @@ class OperationQueueRepository {
       await _saveOperations(operations);
       
       print('📋 QUEUE_REPO: Operación eliminada - $operationId (${operations.length} restantes)');
+      unawaited(
+        getIt<AuditEventService>().recordInfo(
+          category: 'queue',
+          message: 'Operación offline eliminada',
+          metadata: {
+            'operationId': operationId,
+          },
+        ),
+      );
     } catch (e) {
       print('❌ QUEUE_REPO: Error eliminando operación: $e');
+      unawaited(
+        getIt<AuditEventService>().recordError(
+          category: 'queue',
+          message: 'Error eliminando operación offline',
+          metadata: {
+            'operationId': operationId,
+            'error': e.toString(),
+          },
+        ),
+      );
       rethrow;
     }
   }
@@ -117,9 +196,29 @@ class OperationQueueRepository {
         await _saveOperations(activeOperations);
         final cleaned = operations.length - activeOperations.length;
         print('🧹 QUEUE_REPO: Limpieza completada - $cleaned operaciones eliminadas');
+        if (cleaned > 0) {
+          unawaited(
+            getIt<AuditEventService>().recordInfo(
+              category: 'queue',
+              message: 'Limpieza de operaciones completadas',
+              metadata: {
+                'eliminadas': cleaned,
+              },
+            ),
+          );
+        }
       }
     } catch (e) {
       print('❌ QUEUE_REPO: Error en limpieza: $e');
+      unawaited(
+        getIt<AuditEventService>().recordError(
+          category: 'queue',
+          message: 'Error limpiando operaciones completadas',
+          metadata: {
+            'error': e.toString(),
+          },
+        ),
+      );
       rethrow;
     }
   }
@@ -129,8 +228,23 @@ class OperationQueueRepository {
     try {
       await _saveOperations([]);
       print('🧹 QUEUE_REPO: Todas las operaciones eliminadas');
+      unawaited(
+        getIt<AuditEventService>().recordWarning(
+          category: 'queue',
+          message: 'Cola offline limpiada por completo',
+        ),
+      );
     } catch (e) {
       print('❌ QUEUE_REPO: Error limpiando todas las operaciones: $e');
+      unawaited(
+        getIt<AuditEventService>().recordError(
+          category: 'queue',
+          message: 'Error limpiando cola offline',
+          metadata: {
+            'error': e.toString(),
+          },
+        ),
+      );
       rethrow;
     }
   }

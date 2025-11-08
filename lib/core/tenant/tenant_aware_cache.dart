@@ -1,4 +1,5 @@
 import 'package:odoo_repository/odoo_repository.dart';
+import '../audit/audit_event.dart';
 import 'tenant_context.dart';
 
 /// Cache con aislamiento automático por tenant
@@ -21,6 +22,7 @@ import 'tenant_context.dart';
 /// ```
 class TenantAwareCache {
   final OdooKv _kv;
+  static const String _auditEventsKey = 'diagnostic_audit_events';
   
   TenantAwareCache(this._kv);
   
@@ -77,6 +79,79 @@ class TenantAwareCache {
     await _kv.put(scopedKey, value);
     
     print('💾 TENANT_CACHE: PUT "$key" → "$scopedKey" (${value.runtimeType})');
+  }
+
+  /// Añade un evento de auditoría a la lista de eventos del tenant actual.
+  /// Mantiene un límite máximo configurable (por defecto 200 eventos recientes).
+  Future<void> appendAuditEvent(
+    AuditEvent event, {
+    int maxEvents = 200,
+  }) async {
+    final scopedKey = TenantContext.scopeKey(_auditEventsKey);
+    final dynamic existing = _kv.get(scopedKey, defaultValue: <dynamic>[]);
+
+    final currentEvents = <AuditEvent>[];
+    if (existing is List) {
+      for (final item in existing) {
+        if (item is Map) {
+          try {
+            currentEvents.add(
+              AuditEvent.fromJson(Map<String, dynamic>.from(item)),
+            );
+          } catch (e) {
+            print('⚠️ TENANT_CACHE: Error convirtiendo evento almacenado: $e');
+          }
+        }
+      }
+    }
+
+    currentEvents.insert(0, event);
+
+    if (currentEvents.length > maxEvents) {
+      currentEvents.removeRange(maxEvents, currentEvents.length);
+    }
+
+    final serialized = currentEvents.map((e) => e.toJson()).toList();
+    await _kv.put(scopedKey, serialized);
+
+    print('📝 TENANT_CACHE: Evento registrado (${event.level.name}) ${event.category} → ${event.message}');
+  }
+
+  /// Obtiene los eventos de auditoría del tenant actual.
+  /// Si se especifica [limit], devuelve solo los primeros N eventos.
+  List<AuditEvent> getAuditEvents({int? limit}) {
+    final scopedKey = TenantContext.scopeKey(_auditEventsKey);
+    final dynamic stored = _kv.get(scopedKey, defaultValue: <dynamic>[]);
+
+    if (stored is! List) {
+      return const <AuditEvent>[];
+    }
+
+    final events = stored
+        .whereType<Map>()
+        .map((item) {
+          try {
+            return AuditEvent.fromJson(Map<String, dynamic>.from(item));
+          } catch (e) {
+            print('⚠️ TENANT_CACHE: Evento inválido al leer cache: $e');
+            return null;
+          }
+        })
+        .whereType<AuditEvent>()
+        .toList();
+
+    if (limit != null && limit > 0 && events.length > limit) {
+      return events.sublist(0, limit);
+    }
+
+    return events;
+  }
+
+  /// Elimina todos los eventos de auditoría del tenant actual.
+  Future<void> clearAuditEvents() async {
+    final scopedKey = TenantContext.scopeKey(_auditEventsKey);
+    await _kv.delete(scopedKey);
+    print('🧹 TENANT_CACHE: Eventos de auditoría limpiados');
   }
   
   /// Elimina un valor del cache con scope del tenant actual
@@ -244,6 +319,14 @@ class TenantAwareCache {
   Map<String, dynamic> getDebugInfo() {
     final currentLicense = TenantContext.currentLicenseNumber;
     final allTenants = listAllTenants();
+    int auditEventsCount = 0;
+    if (currentLicense != null) {
+      final scopedKey = TenantContext.scopeKey(_auditEventsKey);
+      final dynamic stored = _kv.get(scopedKey);
+      if (stored is List) {
+        auditEventsCount = stored.length;
+      }
+    }
     
     return {
       'currentTenant': currentLicense,
@@ -255,6 +338,7 @@ class TenantAwareCache {
           ? getTenantSize(currentLicense)
           : 0.0,
       'totalKeys': _kv.keys.length,
+      'auditEventsCount': auditEventsCount,
     };
   }
 }

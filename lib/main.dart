@@ -29,6 +29,7 @@ import 'presentation/pages/login_page.dart';
 import 'presentation/pages/splash_page.dart';
 import 'presentation/pages/license_page.dart';
 import 'presentation/pages/pin_login_page.dart';
+import 'presentation/pages/diagnostics_page.dart';
 import "presentation/theme.dart";
 import 'presentation/bloc/bootstrap/bootstrap_bloc.dart';
 import 'presentation/bloc/bootstrap/bootstrap_event.dart';
@@ -108,6 +109,7 @@ class MyApp extends StatelessWidget {
               '/pin-login': (context) => const PinLoginPage(),
               '/home': (context) => const HomePage(),
               '/login': (context) => const LoginPage(),
+              '/diagnostics': (context) => const DiagnosticsPage(),
             },
           ),
         );

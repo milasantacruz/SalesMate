@@ -121,6 +121,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               return const SizedBox.shrink();
             },
           ),
+          IconButton(
+            tooltip: 'Diagnóstico',
+            icon: const Icon(Icons.bug_report_outlined),
+            onPressed: () => Navigator.of(context).pushNamed('/diagnostics'),
+          ),
           // Botón de búsqueda
           /*IconButton(
             icon: const Icon(Icons.search),

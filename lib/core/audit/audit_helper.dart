@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import '../di/injection_container.dart';
 import '../cache/custom_odoo_kv.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
+
+import 'audit_event_service.dart';
+import 'audit_event.dart';
 
 /// Helper para obtener información de auditoría para operaciones
 class AuditHelper {
@@ -51,6 +56,17 @@ class AuditHelper {
       if (userIdStr != null) {
         effectiveUserId = int.tryParse(userIdStr.toString());
         print('📝 AUDIT_HELPER: Usando user_id del empleado: $effectiveUserId (employee_id: $employeeId)');
+        unawaited(
+          getIt<AuditEventService>().recordInfo(
+            category: 'audit',
+            message: 'user_id del empleado aplicado en auditoría',
+            metadata: {
+              'employeeId': employeeId,
+              'userId': effectiveUserId,
+              'context': 'create',
+            },
+          ),
+        );
       }
     } catch (e) {
       print('⚠️ AUDIT_HELPER: No se pudo obtener userId del empleado: $e');
@@ -66,6 +82,16 @@ class AuditHelper {
         effectiveUserId = int.tryParse(auditUserId);
       }
       print('📝 AUDIT_HELPER: Usando user_id de sesión: $effectiveUserId');
+      unawaited(
+        getIt<AuditEventService>().recordWarning(
+          category: 'audit',
+          message: 'Fallback a user_id de sesión para auditoría',
+          metadata: {
+            'userId': effectiveUserId,
+            'context': 'create',
+          },
+        ),
+      );
     }
     
     final auditData = {
@@ -91,6 +117,17 @@ class AuditHelper {
       if (userIdStr != null) {
         effectiveUserId = int.tryParse(userIdStr.toString());
         print('📝 AUDIT_HELPER: Usando user_id del empleado: $effectiveUserId (employee_id: $employeeId)');
+        unawaited(
+          getIt<AuditEventService>().recordInfo(
+            category: 'audit',
+            message: 'user_id del empleado aplicado en auditoría',
+            metadata: {
+              'employeeId': employeeId,
+              'userId': effectiveUserId,
+              'context': 'write',
+            },
+          ),
+        );
       }
     } catch (e) {
       print('⚠️ AUDIT_HELPER: No se pudo obtener userId del empleado: $e');
@@ -106,6 +143,16 @@ class AuditHelper {
         effectiveUserId = int.tryParse(auditUserId);
       }
       print('📝 AUDIT_HELPER: Usando user_id de sesión: $effectiveUserId');
+      unawaited(
+        getIt<AuditEventService>().recordWarning(
+          category: 'audit',
+          message: 'Fallback a user_id de sesión para auditoría',
+          metadata: {
+            'userId': effectiveUserId,
+            'context': 'write',
+          },
+        ),
+      );
     }
     
     final auditData = {
@@ -152,10 +199,26 @@ class AuditHelper {
     final auditInfo = getCurrentUserAuditInfo();
     final timestamp = DateTime.now().toIso8601String();
     
-    return '[AUDIT $timestamp] User: ${auditInfo['user_id']} | '
+    final logMessage = '[AUDIT $timestamp] User: ${auditInfo['user_id']} | '
            'Operation: $operation | '
            'Database: ${auditInfo['db_name']} | '
            'Session: ${auditInfo['session_id']}'
            '${details != null ? ' | Details: $details' : ''}';
+
+    unawaited(
+      getIt<AuditEventService>().recordEvent(
+        category: 'audit-log',
+        message: operation,
+        level: AuditEventLevel.info,
+        metadata: {
+          'details': details,
+          'userId': auditInfo['user_id'],
+          'dbName': auditInfo['db_name'],
+        },
+        origin: 'AuditHelper.formatAuditLog',
+      ),
+    );
+
+    return logMessage;
   }
 }

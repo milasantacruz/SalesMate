@@ -48,7 +48,7 @@ class AuthLicenseValidated extends AuthState {
   final String licenseNumber;
   final String? serverUrl;
   final String? database;
-  final String? tipoven; // "U" = Usuario Admin (sin PIN), "E" = Empleado (con PIN)
+  final String? tipoven; // "E" = flujo sin PIN, "U" = requiere autenticación por PIN
 
   const AuthLicenseValidated({
     required this.licenseNumber,

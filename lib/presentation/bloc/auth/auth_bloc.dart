@@ -15,6 +15,7 @@ import '../../../data/repositories/pricelist_repository.dart';
 import '../../../data/repositories/tax_repository.dart';
 import '../../../core/network/network_connectivity.dart';
 import '../../../core/http/odoo_client_mobile.dart';
+import '../../../core/audit/audit_event_service.dart';
 
 /// BLoC para manejar la autenticación de usuarios
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
@@ -397,7 +398,7 @@ class EmployeePinLoginRequested extends AuthEvent {
               final env = getIt<OdooEnvironment>();
               print('🔍 AUTH_BLOC: OdooEnvironment después de initAuthScope:');
               print('🔍 AUTH_BLOC:   - dbName: ${env.dbName}');
-              print('🔍 AUTH_BLOC:   - orpc disponible: ${env.orpc != null}');
+              print('🔍 AUTH_BLOC:   - orpc runtimeType: ${env.orpc.runtimeType}');
               
               final clientAfter = getIt<OdooClient>();
               print('🔍 AUTH_BLOC: OdooClient después de initAuthScope:');
@@ -475,41 +476,53 @@ class EmployeePinLoginRequested extends AuthEvent {
             print('⚠️ AUTH_BLOC: Error general en cacheos post-login: $e');
           }
 
-          // 🚧 TEMPORAL: Desactivar PIN - Siempre ir directo a la app
-          // TODO: Reactivar validación de tipoven cuando se necesite PIN
-          print('🔓 AUTH_BLOC: [TEMPORAL] PIN desactivado - Login directo');
-          print('✅ AUTH_BLOC: Emitiendo AuthAuthenticated (sin PIN)');
-          
-          // Obtener datos del usuario desde cache
-          final userId = kv.get('userId')?.toString() ?? 'unknown';
-          final username = kv.get('username')?.toString() ?? info.username ?? 'Admin';
-          
-          emit(AuthAuthenticated(
-            username: username,
-            userId: userId,
-            database: info.database ?? '',
-          ));
-          return;
-          
-          // CÓDIGO ORIGINAL (comentado temporalmente):
-          /*
-          // Si tipoven es "U" (Usuario/Admin), ir directamente a la app sin PIN
-          if (info.tipoven?.toUpperCase() == 'U') {
-            print('🔓 AUTH_BLOC: Tipo de venta "U" - Login directo como administrador');
-            print('✅ AUTH_BLOC: Emitiendo AuthAuthenticated (sin PIN)');
-            
-            // Obtener datos del usuario desde cache
-            final userId = kv.get('userId')?.toString() ?? 'unknown';
-            final username = kv.get('username')?.toString() ?? info.username ?? 'Admin';
-            
+          // Determinar flujo según tipoven
+          final tipoVenta = info.tipoven?.toUpperCase();
+          final cachedUserId = kv.get('userId')?.toString() ?? 'unknown';
+          final cachedUsername = kv.get('username')?.toString() ?? info.username ?? 'Admin';
+
+          final auditService = getIt<AuditEventService>();
+
+          if (tipoVenta == 'E') {
+            unawaited(
+              auditService.recordInfo(
+                category: 'auth',
+                message: 'Login directo por tipoven=E',
+                metadata: {
+                  'license': info.licenseNumber,
+                  'username': cachedUsername,
+                  'companyId': info.empresaId,
+                },
+              ),
+            );
+            print('🔓 AUTH_BLOC: Tipo de venta "E" - Login directo (empleado sin PIN)');
             emit(AuthAuthenticated(
-              username: username,
-              userId: userId,
+              username: cachedUsername,
+              userId: cachedUserId,
               database: info.database ?? '',
             ));
             return;
           }
-          */
+
+          unawaited(
+            auditService.recordInfo(
+              category: 'auth',
+              message: 'Licencia requiere PIN (tipoven=U)',
+              metadata: {
+                'license': info.licenseNumber,
+                'username': cachedUsername,
+                'companyId': info.empresaId,
+              },
+            ),
+          );
+          print('🔐 AUTH_BLOC: Tipo de venta "${info.tipoven}" - Se requiere autenticación por PIN');
+          emit(AuthLicenseValidated(
+            licenseNumber: info.licenseNumber,
+            serverUrl: info.serverUrl,
+            database: info.database,
+            tipoven: info.tipoven,
+          ));
+          return;
           
         } catch (e) {
           print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
@@ -533,6 +546,16 @@ class EmployeePinLoginRequested extends AuthEvent {
           }
           
           print('❌ AUTH_BLOC: ═══════════════════════════════════════════════');
+          unawaited(
+            getIt<AuditEventService>().recordError(
+              category: 'auth',
+              message: 'Error validando licencia',
+              metadata: {
+                'license': info.licenseNumber,
+                'error': e.toString(),
+              },
+            ),
+          );
           print('🔴 AUTH_BLOC: ⚠️ EMITIENDO AuthError (desde catch): $errorMsg');
           emit(AuthError(errorMsg));
           print('🔴 AUTH_BLOC: ✅ AuthError EMITIDO (desde catch), retornando...');
@@ -569,6 +592,7 @@ class EmployeePinLoginRequested extends AuthEvent {
     emit(AuthLoading());
     
     try {
+      final auditService = getIt<AuditEventService>();
       final repo = getIt<EmployeeRepository>();
       print('🔢 AUTH_BLOC: Validando PIN con EmployeeRepository...');
       
@@ -576,6 +600,15 @@ class EmployeePinLoginRequested extends AuthEvent {
       
       if (employee == null) {
         print('❌ AUTH_BLOC: PIN inválido o múltiples coincidencias');
+        unawaited(
+          auditService.recordWarning(
+            category: 'auth-pin',
+            message: 'PIN inválido o ambiguo',
+            metadata: {
+              'pin': event.pin,
+            },
+          ),
+        );
         emit(AuthError('PIN inválido. Verifica tu código de empleado.'));
         return;
       }
@@ -597,6 +630,17 @@ class EmployeePinLoginRequested extends AuthEvent {
         // Caso ideal: empleado tiene usuario de Odoo vinculado
         kv.put('userId', employee.userId.toString());
         print('💾 AUTH_BLOC: User ID del empleado guardado: ${employee.userId}');
+        unawaited(
+          auditService.recordInfo(
+            category: 'auth-pin',
+            message: 'PIN validado con usuario asociado',
+            metadata: {
+              'employeeId': employee.id,
+              'userId': employee.userId,
+              'employeeName': employee.name,
+            },
+          ),
+        );
       } else {
         // Caso no ideal: empleado sin usuario de Odoo
         print('⚠️ ═══════════════════════════════════════════════════════════');
@@ -614,7 +658,35 @@ class EmployeePinLoginRequested extends AuthEvent {
         print('⚠️ 2. Campo "Usuario relacionado" > Crear usuario');
         print('⚠️ 3. Asignar permisos de "Ventas / Usuario"');
         print('⚠️ ═══════════════════════════════════════════════════════════');
-        // NO sobrescribir userId - mantener el de la sesión (admin)
+        try {
+          final session = getIt<OdooSession>();
+          final fallbackUserId = session.userId.toString();
+          kv.put('userId', fallbackUserId);
+          print('⚠️ AUTH_BLOC: Fallback a userId de sesión: $fallbackUserId');
+          unawaited(
+            auditService.recordWarning(
+              category: 'auth-pin',
+              message: 'Empleado sin user_id, se aplica fallback',
+              metadata: {
+                'employeeId': employee.id,
+                'employeeName': employee.name,
+                'fallbackUserId': fallbackUserId,
+              },
+            ),
+          );
+        } catch (e) {
+          print('⚠️ AUTH_BLOC: No se pudo obtener userId de sesión para fallback: $e');
+          unawaited(
+            auditService.recordError(
+              category: 'auth-pin',
+              message: 'Fallback a user_id falló (sin sesión)',
+              metadata: {
+                'employeeId': employee.id,
+                'error': e.toString(),
+              },
+            ),
+          );
+        }
       }
       
       if (employee.workEmail != null) kv.put('employeeEmail', employee.workEmail);
@@ -642,17 +714,37 @@ class EmployeePinLoginRequested extends AuthEvent {
       
       // Emitir estado autenticado con el empleado
       print('✅ AUTH_BLOC: Emitiendo AuthAuthenticated');
+      unawaited(
+        auditService.recordInfo(
+          category: 'auth-pin',
+          message: 'PIN aceptado, sesión autenticada',
+          metadata: {
+            'employeeId': employee.id,
+            'employeeName': employee.name,
+            'userId': kv.get('userId'),
+          },
+        ),
+      );
       final effectiveUserId = employee.userId?.toString() ?? employee.id.toString();
       print('✅ AUTH_BLOC: userId efectivo para AuthState: $effectiveUserId');
       
       emit(AuthAuthenticated(
         username: employee.name,
-        userId: effectiveUserId,
-        database: kv.get('database') ?? 'unknown',
+        userId: kv.get('userId'),
+        database: kv.get('database') ?? '',
       ));
-    } catch (e, stackTrace) {
+    } catch (e) {
       print('❌ AUTH_BLOC: Error login por PIN: $e');
-      print('❌ AUTH_BLOC: Stack trace: $stackTrace');
+      unawaited(
+        getIt<AuditEventService>().recordError(
+          category: 'auth-pin',
+          message: 'Excepción validando PIN',
+          metadata: {
+            'error': e.toString(),
+            'pin': event.pin,
+          },
+        ),
+      );
       emit(AuthError('Error al validar PIN: $e'));
     }
   }
