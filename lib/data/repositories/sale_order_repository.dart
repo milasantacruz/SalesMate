@@ -8,6 +8,7 @@ import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
 import '../../core/di/injection_container.dart';
 import '../../core/audit/audit_helper.dart';
+import '../../core/audit/audit_event_service.dart';
 import '../../core/tenant/tenant_storage_config.dart';
 import '../../core/cache/custom_odoo_kv.dart';
 import '../../core/services/order_totals_calculation_service.dart';
@@ -815,6 +816,19 @@ class SaleOrderRepository extends OfflineOdooRepository<SaleOrder> {
     try {
       print('📧 SALE_ORDER_REPO: Enviando cotización $orderId...');
       print(AuditHelper.formatAuditLog('SEND_QUOTATION', details: 'Order ID: $orderId'));
+      final connectionState = await netConn.checkNetConn();
+      if (connectionState != netConnState.online) {
+        print('📴 SALE_ORDER_REPO: Sin conexión - no se puede enviar cotización ahora');
+        print(AuditHelper.formatAuditLog('SEND_QUOTATION_SKIPPED', details: 'Order ID: $orderId (offline)'));
+        await getIt<AuditEventService>().recordWarning(
+          category: 'sale-order',
+          message: 'Envio de cotización omitido por falta de conexión',
+          metadata: {
+            'orderId': orderId,
+          },
+        );
+        throw Exception('Sin conexión a internet. Conéctate antes de enviar la cotización.');
+      }
       print('📧 SALE_ORDER_REPO: Estado actual antes de envío - obtieniendo datos...');
 
       // Verificar estado actual antes del envío

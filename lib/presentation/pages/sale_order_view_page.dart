@@ -17,7 +17,10 @@ import '../../data/repositories/sale_order_repository.dart';
 import '../../data/repositories/shipping_address_repository.dart';
 import '../../data/repositories/pricelist_repository.dart';
 import '../../core/cache/custom_odoo_kv.dart';
+import '../../core/audit/audit_event_service.dart';
 import 'package:flutter/services.dart';
+import 'package:odoo_repository/odoo_repository.dart';
+import 'dart:async';
 
 /// Página para visualizar y editar una orden de venta existente
 class SaleOrderViewPage extends StatefulWidget {
@@ -297,7 +300,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
               Expanded(
                 child: InkWell(
                   onTap: (_currentOrder?.state == 'draft' || _currentOrder?.state == 'sent') 
-                      ? _sendQuotation 
+                      ? () => _sendQuotation() 
                       : null,
                   child: Opacity(
                     opacity: (_currentOrder?.state == 'draft' || _currentOrder?.state == 'sent') ? 1.0 : 0.5,
@@ -1308,7 +1311,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     }
   }
 
-  void _sendQuotation() {
+  Future<void> _sendQuotation() async {
     if (_currentOrder == null) return;
     
     // Validar que la orden pueda ser enviada
@@ -1319,6 +1322,30 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
           content: Text(validationError),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    final netConnectivity = getIt<NetworkConnectivity>();
+    final connectionState = await netConnectivity.checkNetConn();
+    if (connectionState != netConnState.online) {
+      final auditService = getIt<AuditEventService>();
+      await auditService.recordWarning(
+        category: 'sale-order',
+        message: 'Intento de enviar cotización sin conexión',
+        metadata: {
+          'orderId': _currentOrder!.id,
+          'orderName': _currentOrder!.name,
+        },
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Se requiere conexión a internet para enviar la cotización.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 4),
         ),
       );
       return;
@@ -1371,6 +1398,7 @@ class _SaleOrderViewPageState extends State<SaleOrderViewPage> {
     );
   }
 
+  // ignore: unused_element
   void _confirmOrder() {
     if (_currentOrder == null) return;
     
