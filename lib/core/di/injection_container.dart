@@ -32,6 +32,7 @@ import '../tenant/tenant_context.dart';
 import '../http/odoo_client_mobile.dart'; // ← Importar CookieClient
 import '../http/scoped_odoo_client.dart';
 import '../audit/audit_event_service.dart';
+import '../device/device_info_service.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -41,6 +42,11 @@ Future<void> init() async {
   // Core dependencies
   getIt.registerLazySingleton<NetworkConnectivity>(
     () => NetworkConnectivity(),
+  );
+
+  // Device Info Service
+  getIt.registerLazySingleton<DeviceInfoService>(
+    () => DeviceInfoService(),
   );
 
   // Odoo dependencies - usando implementación personalizada

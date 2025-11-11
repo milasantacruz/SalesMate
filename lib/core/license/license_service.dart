@@ -12,6 +12,7 @@ class LicenseInfo {
   final String? tipoven; // "U" = Usuario Admin (sin PIN), "E" = Empleado (con PIN)
   final int? tarifaId; // ID de la tarifa/pricelist por defecto
   final int? empresaId; // ID de la empresa/company por defecto
+  final String? imei; // IMEI/Android ID del dispositivo asociado
 
   const LicenseInfo({
     required this.success,
@@ -24,6 +25,7 @@ class LicenseInfo {
     this.tipoven,
     this.tarifaId,
     this.empresaId,
+    this.imei,
   });
 
   factory LicenseInfo.fromWebhook(Map<String, dynamic> json) {
@@ -38,6 +40,7 @@ class LicenseInfo {
     String? tipoven;
     int? tarifaId;
     int? empresaId;
+    String? imei;
 
     print('🔍 LICENSE_INFO: Número de conexiones: ${connections.length}');
     
@@ -108,8 +111,19 @@ class LicenseInfo {
           print('⚠️ LICENSE_INFO: empresa_id tiene tipo inesperado: ${empresaIdValue.runtimeType}');
         }
       } else {
-        print('⚠️ LICENSE_INFO: ⚠️⚠️⚠️ ADVERTENCIA: empresa_id NO está presente en fieldValues');
-        print('⚠️ LICENSE_INFO: El webhook no incluye empresa_id - Verificar en el backend');
+      print('⚠️ LICENSE_INFO: ⚠️⚠️⚠️ ADVERTENCIA: empresa_id NO está presente en fieldValues');
+      print('⚠️ LICENSE_INFO: El webhook no incluye empresa_id - Verificar en el backend');
+      }
+      
+      // Extraer imei de license
+      if (license != null) {
+        imei = license['imei'] as String?;
+        if (imei != null && imei.isEmpty) {
+          imei = null; // Tratar string vacío como null
+        }
+        print('📱 LICENSE_INFO: imei encontrado: ${imei ?? "null"}');
+      } else {
+        print('⚠️ LICENSE_INFO: license no está presente en la respuesta');
       }
       
       print('🔍 LICENSE_INFO: Valores extraídos:');
@@ -120,6 +134,7 @@ class LicenseInfo {
       print('   - tipoven: $tipoven');
       print('   - tarifa_id: $tarifaId ${tarifaId == null ? "⚠️ (NULL)" : "✅"}');
       print('   - empresa_id: $empresaId ${empresaId == null ? "⚠️ (NULL)" : "✅"}');
+      print('   - imei: $imei ${imei == null ? "⚠️ (NULL)" : "✅"}');
     }
 
     final info = LicenseInfo(
@@ -133,9 +148,10 @@ class LicenseInfo {
       tipoven: tipoven,
       tarifaId: tarifaId,
       empresaId: empresaId,
+      imei: imei,
     );
     
-    print('✅ LICENSE_INFO: LicenseInfo creado - tipoven: $tipoven, empresaId: $empresaId');
+    print('✅ LICENSE_INFO: LicenseInfo creado - tipoven: $tipoven, empresaId: $empresaId, imei: $imei');
     return info;
   }
 }
@@ -249,6 +265,177 @@ class LicenseService {
       rethrow;
     }
   }
+
+  /// Registra el IMEI/Android ID del dispositivo para una licencia
+  /// 
+  /// Retorna un [ImeiRegistrationResult] con el resultado de la operación.
+  /// 
+  /// Errores posibles:
+  /// - Error 1: Licencia no encontrada
+  /// - Error 2: IMEI ya registrado (licencia vinculada a otro dispositivo)
+  Future<ImeiRegistrationResult> registerImei(
+    String licenseNumber,
+    String imei,
+  ) async {
+    print('📱 LICENSE_SERVICE: Registrando IMEI para licencia: $licenseNumber');
+    print('📱 LICENSE_SERVICE: IMEI: $imei');
+    
+    final url = Uri.parse('$baseUrl/$licenseNumber');
+    print('🌐 LICENSE_SERVICE: URL completa: $url');
+    
+    try {
+      final client = http.Client();
+      final payload = json.encode({'imei': imei});
+      
+      print('📤 LICENSE_SERVICE: Payload: $payload');
+      print('📤 LICENSE_SERVICE: Headers:');
+      print('   - Authorization: Bearer $apiKey');
+      print('   - Content-Type: application/json');
+      
+      final resp = await client.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: payload,
+      ).timeout(const Duration(seconds: 30));
+      
+      client.close();
+      
+      print('📥 LICENSE_SERVICE: Status code recibido: ${resp.statusCode}');
+      print('📥 LICENSE_SERVICE: Body de respuesta: ${resp.body}');
+      
+      final data = json.decode(resp.body) as Map<String, dynamic>;
+      
+      if (resp.statusCode == 200 && data['success'] == true) {
+        // Éxito: IMEI registrado
+        print('✅ LICENSE_SERVICE: IMEI registrado exitosamente');
+        
+        final licenseData = data['license'] as Map<String, dynamic>?;
+        final registeredImei = licenseData?['imei'] as String?;
+        
+        return ImeiRegistrationResult.success(
+          message: data['message'] as String? ?? 'IMEI registrado exitosamente',
+          registeredImei: registeredImei ?? imei,
+          license: licenseData != null ? LicenseInfo.fromWebhook({
+            'success': true,
+            'license': licenseData,
+            'connections': [],
+          }) : null,
+        );
+      } else {
+        // Error: Licencia no encontrada o IMEI ya registrado
+        final error = data['error'] as String? ?? 'Error desconocido';
+        final message = data['message'] as String? ?? 'Error al registrar IMEI';
+        final registeredImei = data['registeredImei'] as String?;
+        
+        print('❌ LICENSE_SERVICE: Error registrando IMEI: $error');
+        print('❌ LICENSE_SERVICE: Mensaje: $message');
+        
+        if (error == 'Licencia no encontrada') {
+          return ImeiRegistrationResult.errorLicenseNotFound(message: message);
+        } else if (error == 'IMEI ya registrado') {
+          return ImeiRegistrationResult.errorImeiAlreadyRegistered(
+            message: message,
+            registeredImei: registeredImei,
+          );
+        } else {
+          return ImeiRegistrationResult.errorUnknown(
+            error: error,
+            message: message,
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      print('❌ LICENSE_SERVICE: Excepción registrando IMEI: $e');
+      print('❌ LICENSE_SERVICE: Stack trace: $stackTrace');
+      return ImeiRegistrationResult.errorUnknown(
+        error: 'Exception',
+        message: 'Error de red o conexión: ${e.toString()}',
+      );
+    }
+  }
+}
+
+/// Resultado del registro de IMEI
+class ImeiRegistrationResult {
+  final bool success;
+  final String? message;
+  final String? error;
+  final String? registeredImei;
+  final LicenseInfo? license;
+  final ImeiRegistrationErrorType? errorType;
+
+  const ImeiRegistrationResult._({
+    required this.success,
+    this.message,
+    this.error,
+    this.registeredImei,
+    this.license,
+    this.errorType,
+  });
+
+  /// Éxito: IMEI registrado exitosamente
+  factory ImeiRegistrationResult.success({
+    required String message,
+    required String registeredImei,
+    LicenseInfo? license,
+  }) {
+    return ImeiRegistrationResult._(
+      success: true,
+      message: message,
+      registeredImei: registeredImei,
+      license: license,
+    );
+  }
+
+  /// Error 1: Licencia no encontrada
+  factory ImeiRegistrationResult.errorLicenseNotFound({
+    required String message,
+  }) {
+    return ImeiRegistrationResult._(
+      success: false,
+      error: 'Licencia no encontrada',
+      message: message,
+      errorType: ImeiRegistrationErrorType.licenseNotFound,
+    );
+  }
+
+  /// Error 2: IMEI ya registrado (licencia vinculada a otro dispositivo)
+  factory ImeiRegistrationResult.errorImeiAlreadyRegistered({
+    required String message,
+    String? registeredImei,
+  }) {
+    return ImeiRegistrationResult._(
+      success: false,
+      error: 'IMEI ya registrado',
+      message: message,
+      registeredImei: registeredImei,
+      errorType: ImeiRegistrationErrorType.imeiAlreadyRegistered,
+    );
+  }
+
+  /// Error desconocido
+  factory ImeiRegistrationResult.errorUnknown({
+    required String error,
+    required String message,
+  }) {
+    return ImeiRegistrationResult._(
+      success: false,
+      error: error,
+      message: message,
+      errorType: ImeiRegistrationErrorType.unknown,
+    );
+  }
+}
+
+/// Tipo de error en el registro de IMEI
+enum ImeiRegistrationErrorType {
+  licenseNotFound,
+  imeiAlreadyRegistered,
+  unknown,
 }
 
 

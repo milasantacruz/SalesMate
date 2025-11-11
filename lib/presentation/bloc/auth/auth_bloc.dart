@@ -16,6 +16,7 @@ import '../../../data/repositories/tax_repository.dart';
 import '../../../core/network/network_connectivity.dart';
 import '../../../core/http/odoo_client_mobile.dart';
 import '../../../core/audit/audit_event_service.dart';
+import '../../../core/device/device_info_service.dart';
 
 /// BLoC para manejar la autenticación de usuarios
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
@@ -175,6 +176,143 @@ class EmployeePinLoginRequested extends AuthEvent {
         emit(AuthError('Licencia no activa o inválida'));
         return;
       }
+
+      // 📱 VALIDACIÓN/REGISTRO DE IMEI
+      print('📱 AUTH_BLOC: ═══════════════════════════════════════════════');
+      print('📱 AUTH_BLOC: Validando/Registrando IMEI del dispositivo');
+      print('📱 AUTH_BLOC: ═══════════════════════════════════════════════');
+      
+      final deviceInfoService = getIt<DeviceInfoService>();
+      final deviceImei = await deviceInfoService.getDeviceIdentifier();
+      
+      if (deviceImei == null || deviceImei.isEmpty) {
+        print('❌ AUTH_BLOC: No se pudo obtener el identificador del dispositivo');
+        final auditService = getIt<AuditEventService>();
+        await auditService.recordError(
+          category: 'auth',
+          message: 'No se pudo obtener identificador del dispositivo',
+          metadata: {'license': info.licenseNumber},
+        );
+        emit(AuthError('No se pudo obtener el identificador del dispositivo. Por favor, contacte a soporte.'));
+        return;
+      }
+      
+      print('📱 AUTH_BLOC: IMEI del dispositivo: $deviceImei');
+      print('📱 AUTH_BLOC: IMEI de la licencia: ${info.imei ?? "null"}');
+      
+      // Si la licencia no tiene IMEI, registrarlo
+      if (info.imei == null || info.imei!.isEmpty) {
+        print('📱 AUTH_BLOC: Licencia sin IMEI - Registrando IMEI del dispositivo...');
+        final auditService = getIt<AuditEventService>();
+        
+        try {
+          final registrationResult = await service.registerImei(
+            info.licenseNumber,
+            deviceImei,
+          );
+          
+          if (registrationResult.success) {
+            print('✅ AUTH_BLOC: IMEI registrado exitosamente');
+            await auditService.recordInfo(
+              category: 'auth',
+              message: 'IMEI registrado exitosamente',
+              metadata: {
+                'license': info.licenseNumber,
+                'imei': deviceImei,
+              },
+            );
+            // Continuar con el flujo normal
+          } else {
+            // Manejar errores según el tipo
+            if (registrationResult.errorType == ImeiRegistrationErrorType.licenseNotFound) {
+              print('❌ AUTH_BLOC: Licencia no encontrada');
+              await auditService.recordError(
+                category: 'auth',
+                message: 'Licencia no encontrada al registrar IMEI',
+                metadata: {
+                  'license': info.licenseNumber,
+                  'error': registrationResult.message ?? 'Licencia no encontrada',
+                },
+              );
+              emit(AuthError(registrationResult.message ?? 'Licencia no encontrada'));
+              return;
+            } else if (registrationResult.errorType == ImeiRegistrationErrorType.imeiAlreadyRegistered) {
+              print('❌ AUTH_BLOC: IMEI ya registrado en otro dispositivo');
+              await auditService.recordError(
+                category: 'auth',
+                message: 'IMEI ya registrado en otro dispositivo',
+                metadata: {
+                  'license': info.licenseNumber,
+                  'registeredImei': registrationResult.registeredImei ?? 'unknown',
+                  'currentImei': deviceImei,
+                },
+              );
+              emit(AuthError('Esta licencia ya está vinculada a otro dispositivo, por favor contacte a su administrador'));
+              return;
+            } else {
+              print('❌ AUTH_BLOC: Error desconocido al registrar IMEI');
+              await auditService.recordError(
+                category: 'auth',
+                message: 'Error al registrar IMEI',
+                metadata: {
+                  'license': info.licenseNumber,
+                  'error': registrationResult.message ?? 'Error desconocido',
+                },
+              );
+              emit(AuthError(registrationResult.message ?? 'Error al registrar IMEI. Por favor, intente nuevamente.'));
+              return;
+            }
+          }
+        } catch (e, stackTrace) {
+          print('❌ AUTH_BLOC: Excepción al registrar IMEI: $e');
+          print('❌ AUTH_BLOC: Stack trace: $stackTrace');
+          await auditService.recordError(
+            category: 'auth',
+            message: 'Excepción al registrar IMEI',
+            metadata: {
+              'license': info.licenseNumber,
+              'error': e.toString(),
+            },
+          );
+          emit(AuthError('Error de conexión al registrar IMEI. Por favor, intente nuevamente.'));
+          return;
+        }
+      } else {
+        // La licencia ya tiene IMEI - validar que coincida
+        print('📱 AUTH_BLOC: Licencia ya tiene IMEI - Validando coincidencia...');
+        final auditService = getIt<AuditEventService>();
+        
+        if (info.imei != deviceImei) {
+          print('❌ AUTH_BLOC: IMEI no coincide');
+          print('❌ AUTH_BLOC: IMEI de la licencia: ${info.imei}');
+          print('❌ AUTH_BLOC: IMEI del dispositivo: $deviceImei');
+          await auditService.recordError(
+            category: 'auth',
+            message: 'IMEI del dispositivo no coincide con el registrado',
+            metadata: {
+              'license': info.licenseNumber,
+              'registeredImei': info.imei,
+              'currentImei': deviceImei,
+            },
+          );
+          emit(AuthError('Esta licencia está vinculada a otro dispositivo. Por favor, contacte a su administrador.'));
+          return;
+        } else {
+          print('✅ AUTH_BLOC: IMEI coincide - Dispositivo autorizado');
+          await auditService.recordInfo(
+            category: 'auth',
+            message: 'IMEI validado correctamente',
+            metadata: {
+              'license': info.licenseNumber,
+              'imei': deviceImei,
+            },
+          );
+        }
+      }
+      
+      print('📱 AUTH_BLOC: ═══════════════════════════════════════════════');
+      print('📱 AUTH_BLOC: Validación/Registro de IMEI completado');
+      print('📱 AUTH_BLOC: ═══════════════════════════════════════════════');
       
       // Persistir configuración en KV
       print('💾 AUTH_BLOC: Guardando configuración en cache...');
