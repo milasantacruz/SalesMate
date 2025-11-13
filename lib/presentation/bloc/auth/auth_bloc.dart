@@ -501,7 +501,7 @@ class EmployeePinLoginRequested extends AuthEvent {
           }
           
           print('✅ AUTH_BLOC: Autenticación con Odoo exitosa');
-
+          
           // ✅ NUEVO: Inicializar sesión en repositorios ANTES de cachear
           // Esto asegura que OdooEnvironment se cree con session.dbName correcto
           // y que los repos tengan sesión válida (igual que en _onLoginRequested)

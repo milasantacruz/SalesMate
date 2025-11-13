@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
 import '../bloc/product/product_bloc.dart';
 import '../bloc/product/product_state.dart';
 import '../bloc/product/product_event.dart';
@@ -93,7 +94,7 @@ class _ProductsListState extends State<ProductsList> {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                '\$${product.listPrice.toStringAsFixed(2)}',
+                                _formatPrice(product.listPrice),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.green,
@@ -246,5 +247,22 @@ class _ProductsListState extends State<ProductsList> {
     if (product.type == 'consu' && product.isStorable == true) return Colors.blue.shade100;
     if (product.type == 'consu' && product.isStorable == false) return Colors.orange.shade100;
     return Colors.grey.shade200;
+  }
+
+  /// Formatea el precio con separadores de miles (puntos) y sin decimales
+  /// Ejemplo: 31092.00 -> $31.092
+  String _formatPrice(double price) {
+    // Redondear a entero si los decimales son .00
+    final isWholeNumber = price.truncateToDouble() == price;
+    final priceToFormat = isWholeNumber ? price.toInt() : price;
+    
+    // Formatear con separadores de miles (puntos) y sin decimales
+    final formatter = NumberFormat.currency(
+      symbol: '\$',
+      decimalDigits: 0,
+      locale: 'es_CL', // Usar formato chileno (puntos para miles)
+    );
+    
+    return formatter.format(priceToFormat);
   }
 }
