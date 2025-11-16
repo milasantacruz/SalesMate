@@ -357,6 +357,63 @@ class LicenseService {
       );
     }
   }
+
+  /// Obtiene el historial de IMEIs/Android IDs registrados para una licencia
+  /// 
+  /// Retorna un [LicenseHistoryResult] con el historial completo de dispositivos
+  /// que han estado asociados a la licencia.
+  Future<LicenseHistoryResult> getLicenseHistory(String licenseNumber) async {
+    print('📜 LICENSE_SERVICE: Obteniendo historial de licencia: $licenseNumber');
+    
+    final url = Uri.parse('$baseUrl/$licenseNumber/history');
+    print('🌐 LICENSE_SERVICE: URL completa: $url');
+    
+    try {
+      final client = http.Client();
+      final resp = await client.get(url, headers: {
+        'Authorization': 'Bearer $apiKey',
+        'Accept': 'application/json',
+      }).timeout(const Duration(seconds: 30));
+      
+      client.close();
+      
+      print('📥 LICENSE_SERVICE: Status code recibido: ${resp.statusCode}');
+      print('📥 LICENSE_SERVICE: Body de respuesta: ${resp.body}');
+
+      if (resp.statusCode != 200) {
+        print('❌ LICENSE_SERVICE: Error HTTP ${resp.statusCode} al obtener historial');
+        print('❌ LICENSE_SERVICE: Respuesta completa: ${resp.body}');
+        return LicenseHistoryResult(
+          success: false,
+          error: 'Error HTTP ${resp.statusCode}: ${resp.body}',
+        );
+      }
+
+      final data = json.decode(resp.body) as Map<String, dynamic>;
+      final result = LicenseHistoryResult.fromJson(data);
+      
+      if (result.success) {
+        print('✅ LICENSE_SERVICE: Historial obtenido exitosamente');
+        print('📜 LICENSE_SERVICE: Total de registros: ${result.totalRecords}');
+        print('📜 LICENSE_SERVICE: currentImei: ${result.currentImei ?? "null"}');
+        print('📜 LICENSE_SERVICE: Entradas en historial: ${result.history.length}');
+        for (final entry in result.history) {
+          print('   - ${entry.imei} (${entry.registeredAt})');
+        }
+      } else {
+        print('❌ LICENSE_SERVICE: Error obteniendo historial: ${result.error}');
+      }
+      
+      return result;
+    } catch (e, stackTrace) {
+      print('❌ LICENSE_SERVICE: Excepción obteniendo historial: $e');
+      print('❌ LICENSE_SERVICE: Stack trace: $stackTrace');
+      return LicenseHistoryResult(
+        success: false,
+        error: 'Error de red o conexión: ${e.toString()}',
+      );
+    }
+  }
 }
 
 /// Resultado del registro de IMEI
@@ -436,6 +493,86 @@ enum ImeiRegistrationErrorType {
   licenseNotFound,
   imeiAlreadyRegistered,
   unknown,
+}
+
+/// Historial de IMEIs/Android IDs registrados para una licencia
+class LicenseHistoryEntry {
+  final String id;
+  final String imei;
+  final DateTime registeredAt;
+  final String source;
+  final String changedBy;
+  final String? previousImei;
+  final Map<String, dynamic>? metadata;
+
+  const LicenseHistoryEntry({
+    required this.id,
+    required this.imei,
+    required this.registeredAt,
+    required this.source,
+    required this.changedBy,
+    this.previousImei,
+    this.metadata,
+  });
+
+  factory LicenseHistoryEntry.fromJson(Map<String, dynamic> json) {
+    return LicenseHistoryEntry(
+      id: json['id'] as String,
+      imei: json['imei'] as String,
+      registeredAt: DateTime.parse(json['registeredAt'] as String),
+      source: json['source'] as String,
+      changedBy: json['changedBy'] as String,
+      previousImei: json['previousImei'] as String?,
+      metadata: json['metadata'] as Map<String, dynamic>?,
+    );
+  }
+}
+
+/// Resultado de la consulta de historial de licencia
+class LicenseHistoryResult {
+  final bool success;
+  final String? licenseNumber;
+  final String? currentImei;
+  final List<LicenseHistoryEntry> history;
+  final int totalRecords;
+  final String? error;
+
+  const LicenseHistoryResult({
+    required this.success,
+    this.licenseNumber,
+    this.currentImei,
+    this.history = const [],
+    this.totalRecords = 0,
+    this.error,
+  });
+
+  factory LicenseHistoryResult.fromJson(Map<String, dynamic> json) {
+    if (json['success'] != true) {
+      return LicenseHistoryResult(
+        success: false,
+        error: json['error'] as String? ?? 'Error desconocido',
+      );
+    }
+
+    final license = json['license'] as Map<String, dynamic>?;
+    final historyList = (json['history'] as List?) ?? [];
+    final history = historyList
+        .map((entry) => LicenseHistoryEntry.fromJson(entry as Map<String, dynamic>))
+        .toList();
+
+    return LicenseHistoryResult(
+      success: true,
+      licenseNumber: license?['licenseNumber'] as String?,
+      currentImei: license?['currentImei'] as String?,
+      history: history,
+      totalRecords: json['totalRecords'] as int? ?? history.length,
+    );
+  }
+
+  /// Verifica si un UUID/IMEI existe en el historial
+  bool containsImei(String imei) {
+    return history.any((entry) => entry.imei.toLowerCase().trim() == imei.toLowerCase().trim());
+  }
 }
 
 

@@ -16,7 +16,7 @@ import '../../../data/repositories/tax_repository.dart';
 import '../../../core/network/network_connectivity.dart';
 import '../../../core/http/odoo_client_mobile.dart';
 import '../../../core/audit/audit_event_service.dart';
-import '../../../core/device/device_info_service.dart';
+import '../../../core/device/device_recovery_service.dart';
 
 /// BLoC para manejar la autenticación de usuarios
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
@@ -28,6 +28,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<LogoutRequested>(_onLogoutRequested);
     on<LicenseCheckRequested>(_onLicenseCheckRequested);
     on<EmployeePinLoginRequested>(_onEmployeePinLoginRequested);
+    on<RecoveryKeyAcknowledged>(_onRecoveryKeyAcknowledged);
+    on<KeyValidationSucceeded>(_onKeyValidationSucceeded);
+    on<KeyValidationFailed>(_onKeyValidationFailed);
     
     // Escuchar eventos de sesión expirada
     _sessionExpiredSubscription = SessionExpiredHandler.sessionExpiredStream.listen((_) {
@@ -177,51 +180,108 @@ class EmployeePinLoginRequested extends AuthEvent {
         return;
       }
 
-      // 📱 VALIDACIÓN/REGISTRO DE IMEI
-      print('📱 AUTH_BLOC: ═══════════════════════════════════════════════');
-      print('📱 AUTH_BLOC: Validando/Registrando IMEI del dispositivo');
-      print('📱 AUTH_BLOC: ═══════════════════════════════════════════════');
+      // 🔑 VALIDACIÓN/REGISTRO DE UUID (KEY RECOVERY)
+      print('🔑 AUTH_BLOC: ═══════════════════════════════════════════════');
+      print('🔑 AUTH_BLOC: Validando/Registrando UUID del dispositivo');
+      print('🔑 AUTH_BLOC: ═══════════════════════════════════════════════');
       
-      final deviceInfoService = getIt<DeviceInfoService>();
-      final deviceImei = await deviceInfoService.getDeviceIdentifier();
-      
-      if (deviceImei == null || deviceImei.isEmpty) {
-        print('❌ AUTH_BLOC: No se pudo obtener el identificador del dispositivo');
+      final deviceRecoveryService = getIt<DeviceRecoveryService>();
         final auditService = getIt<AuditEventService>();
+      
+      // Si la licencia no tiene IMEI (license.imei == null), generar UUID y validar historial
+      if (info.imei == null || info.imei!.isEmpty) {
+        print('🔑 AUTH_BLOC: Licencia sin UUID - Generando nuevo UUID...');
+        
+        // Generar nuevo UUID (ignorando cache si existe)
+        final newUUID = deviceRecoveryService.generateUUID();
+        print('🔑 AUTH_BLOC: UUID generado: $newUUID');
+        
+        // Consultar historial de la licencia
+        print('📜 AUTH_BLOC: Consultando historial de la licencia...');
+        final historyResult = await service.getLicenseHistory(info.licenseNumber);
+        
+        if (!historyResult.success) {
+          print('❌ AUTH_BLOC: Error obteniendo historial: ${historyResult.error}');
+          
+          // Mensaje más específico según el error
+          String errorMessage = 'Error obteniendo historial de licencia. Por favor, intente nuevamente.';
+          final error = historyResult.error?.toLowerCase() ?? '';
+          
+          if (error.contains('network') || error.contains('connection')) {
+            errorMessage = 'Error de conexión al verificar historial. Verifique su conexión a internet.';
+          } else if (error.contains('not found') || error.contains('404')) {
+            errorMessage = 'Licencia no encontrada en el sistema. Verifique el número de licencia.';
+          } else if (error.contains('unauthorized') || error.contains('401')) {
+            errorMessage = 'No autorizado para acceder al historial. Contacte al administrador.';
+          }
+          
         await auditService.recordError(
           category: 'auth',
-          message: 'No se pudo obtener identificador del dispositivo',
-          metadata: {'license': info.licenseNumber},
-        );
-        emit(AuthError('No se pudo obtener el identificador del dispositivo. Por favor, contacte a soporte.'));
+            message: 'Error obteniendo historial de licencia',
+            metadata: {
+              'license': info.licenseNumber,
+              'error': historyResult.error ?? 'Error desconocido',
+            },
+          );
+          emit(AuthError(errorMessage));
         return;
       }
       
-      print('📱 AUTH_BLOC: IMEI del dispositivo: $deviceImei');
-      print('📱 AUTH_BLOC: IMEI de la licencia: ${info.imei ?? "null"}');
-      
-      // Si la licencia no tiene IMEI, registrarlo
-      if (info.imei == null || info.imei!.isEmpty) {
-        print('📱 AUTH_BLOC: Licencia sin IMEI - Registrando IMEI del dispositivo...');
-        final auditService = getIt<AuditEventService>();
+        // Validar si el UUID generado existe en el historial (dispositivo bloqueado)
+        if (historyResult.containsImei(newUUID)) {
+          print('❌ AUTH_BLOC: UUID generado existe en historial - Dispositivo bloqueado');
+          await auditService.recordError(
+            category: 'auth',
+            message: 'Dispositivo bloqueado por administrador',
+            metadata: {
+              'license': info.licenseNumber,
+              'uuid': newUUID,
+            },
+          );
+          emit(AuthError('El dispositivo fue bloqueado por el administrador. Si considera que es un error, comuníquese con el administrador.'));
+          return;
+        }
+        
+        print('✅ AUTH_BLOC: UUID no está en historial - Procediendo con registro...');
         
         try {
+          // Registrar UUID en backend
           final registrationResult = await service.registerImei(
             info.licenseNumber,
-            deviceImei,
+            newUUID,
           );
           
           if (registrationResult.success) {
-            print('✅ AUTH_BLOC: IMEI registrado exitosamente');
+            print('✅ AUTH_BLOC: UUID registrado exitosamente');
+            
+            // Guardar UUID en cache local
+            await deviceRecoveryService.storeUUID(newUUID);
+            print('✅ AUTH_BLOC: UUID guardado en cache local');
+            
             await auditService.recordInfo(
               category: 'auth',
-              message: 'IMEI registrado exitosamente',
+              message: 'UUID registrado exitosamente',
               metadata: {
                 'license': info.licenseNumber,
-                'imei': deviceImei,
+                'uuid': newUUID,
               },
             );
-            // Continuar con el flujo normal
+            
+            // Emitir estado para mostrar pantalla de recuperación
+            // Guardamos la información COMPLETA de la licencia para poder continuar después
+            print('🔑 AUTH_BLOC: Emitiendo AuthRecoveryKeyRequired para mostrar credenciales');
+            emit(AuthRecoveryKeyRequired(
+              uuid: newUUID,
+              licenseNumber: info.licenseNumber,
+              serverUrl: info.serverUrl,
+              database: info.database,
+              tipoven: info.tipoven,
+              username: info.username,
+              password: info.password,
+              tarifaId: info.tarifaId,
+              empresaId: info.empresaId,
+            ));
+            return;
           } else {
             // Manejar errores según el tipo
             if (registrationResult.errorType == ImeiRegistrationErrorType.licenseNotFound) {
@@ -237,14 +297,14 @@ class EmployeePinLoginRequested extends AuthEvent {
               emit(AuthError(registrationResult.message ?? 'Licencia no encontrada'));
               return;
             } else if (registrationResult.errorType == ImeiRegistrationErrorType.imeiAlreadyRegistered) {
-              print('❌ AUTH_BLOC: IMEI ya registrado en otro dispositivo');
+              print('❌ AUTH_BLOC: UUID ya registrado en otro dispositivo');
               await auditService.recordError(
                 category: 'auth',
-                message: 'IMEI ya registrado en otro dispositivo',
+                message: 'UUID ya registrado en otro dispositivo',
                 metadata: {
                   'license': info.licenseNumber,
-                  'registeredImei': registrationResult.registeredImei ?? 'unknown',
-                  'currentImei': deviceImei,
+                  'registeredUUID': registrationResult.registeredImei ?? 'unknown',
+                  'currentUUID': newUUID,
                 },
               );
               emit(AuthError('Esta licencia ya está vinculada a otro dispositivo, por favor contacte a su administrador'));
@@ -266,53 +326,351 @@ class EmployeePinLoginRequested extends AuthEvent {
         } catch (e, stackTrace) {
           print('❌ AUTH_BLOC: Excepción al registrar IMEI: $e');
           print('❌ AUTH_BLOC: Stack trace: $stackTrace');
+          
+          // Determinar tipo de error para mensaje más específico
+          String errorMessage = 'Error de conexión al registrar UUID. Por favor, intente nuevamente.';
+          
+          if (e.toString().contains('SocketException') || 
+              e.toString().contains('Connection') ||
+              e.toString().contains('reset by peer')) {
+            errorMessage = 'Error de conexión con el servidor. Verifique su conexión a internet e intente nuevamente.';
+          } else if (e.toString().contains('TimeoutException')) {
+            errorMessage = 'La solicitud tardó demasiado. Verifique su conexión e intente nuevamente.';
+          } else if (e.toString().contains('FormatException')) {
+            errorMessage = 'Error en la respuesta del servidor. Contacte al administrador.';
+          }
+          
           await auditService.recordError(
             category: 'auth',
             message: 'Excepción al registrar IMEI',
             metadata: {
               'license': info.licenseNumber,
               'error': e.toString(),
+              'errorType': e.runtimeType.toString(),
             },
           );
-          emit(AuthError('Error de conexión al registrar IMEI. Por favor, intente nuevamente.'));
+          emit(AuthError(errorMessage));
           return;
         }
       } else {
-        // La licencia ya tiene IMEI - validar que coincida
-        print('📱 AUTH_BLOC: Licencia ya tiene IMEI - Validando coincidencia...');
-        final auditService = getIt<AuditEventService>();
+        // La licencia ya tiene UUID (license.imei != null) - validar con cache local
+        print('🔑 AUTH_BLOC: Licencia ya tiene UUID - Validando con cache local...');
+        print('🔑 AUTH_BLOC: UUID de la licencia: ${info.imei}');
         
-        if (info.imei != deviceImei) {
-          print('❌ AUTH_BLOC: IMEI no coincide');
-          print('❌ AUTH_BLOC: IMEI de la licencia: ${info.imei}');
-          print('❌ AUTH_BLOC: IMEI del dispositivo: $deviceImei');
+        // Obtener UUID del cache local
+        final storedUUID = deviceRecoveryService.getStoredUUID();
+        print('🔑 AUTH_BLOC: UUID en cache local: ${storedUUID ?? "null"}');
+        
+        if (storedUUID == null || !deviceRecoveryService.compareUUIDs(storedUUID, info.imei!)) {
+          // No hay UUID en cache o no coincide - usuario debe ingresar/escanear key
+          if (storedUUID == null) {
+            print('🔑 AUTH_BLOC: No hay UUID en cache - Mostrar pantalla de validación de key');
+          } else {
+            print('❌ AUTH_BLOC: UUID en cache no coincide con el de la licencia');
+            print('❌ AUTH_BLOC: UUID de la licencia: ${info.imei}');
+            print('❌ AUTH_BLOC: UUID en cache: $storedUUID');
           await auditService.recordError(
             category: 'auth',
-            message: 'IMEI del dispositivo no coincide con el registrado',
+              message: 'UUID del dispositivo no coincide con el registrado',
             metadata: {
               'license': info.licenseNumber,
-              'registeredImei': info.imei,
-              'currentImei': deviceImei,
-            },
-          );
-          emit(AuthError('Esta licencia está vinculada a otro dispositivo. Por favor, contacte a su administrador.'));
+                'registeredUUID': info.imei,
+                'cachedUUID': storedUUID,
+              },
+            );
+          }
+          
+          // Emitir estado para mostrar pantalla de validación de key
+          print('🔑 AUTH_BLOC: Emitiendo AuthKeyValidationRequired');
+          emit(AuthKeyValidationRequired(
+            licenseNumber: info.licenseNumber,
+            expectedUUID: info.imei!,
+          ));
           return;
         } else {
-          print('✅ AUTH_BLOC: IMEI coincide - Dispositivo autorizado');
+          print('✅ AUTH_BLOC: UUID coincide - Dispositivo autorizado');
           await auditService.recordInfo(
             category: 'auth',
-            message: 'IMEI validado correctamente',
+            message: 'UUID validado correctamente',
             metadata: {
               'license': info.licenseNumber,
-              'imei': deviceImei,
+              'uuid': storedUUID,
             },
           );
         }
       }
       
-      print('📱 AUTH_BLOC: ═══════════════════════════════════════════════');
-      print('📱 AUTH_BLOC: Validación/Registro de IMEI completado');
-      print('📱 AUTH_BLOC: ═══════════════════════════════════════════════');
+      // Continuar con el flujo (guardar configuración, login con Odoo, etc.)
+      await _continueAfterUUIDValidation(info, emit);
+
+      // 🚧 TEMPORAL: Este código nunca se alcanza porque siempre hacemos return arriba
+      // CÓDIGO ORIGINAL (comentado - validación de PIN desactivada):
+      /*
+      // Si llegamos aquí y tipoven es "E", emitir AuthLicenseValidated para pedir PIN
+      print('🔐 AUTH_BLOC: Tipo de venta "${info.tipoven}" - Se requiere PIN de empleado');
+      print('✅ AUTH_BLOC: Emitiendo AuthLicenseValidated');
+      emit(AuthLicenseValidated(
+        licenseNumber: info.licenseNumber,
+        serverUrl: info.serverUrl,
+        database: info.database,
+        tipoven: info.tipoven,
+      ));
+      */
+      
+      // 🚧 TEMPORAL: Como el PIN está desactivado, esto no debería ejecutarse
+      print('⚠️ AUTH_BLOC: Código inalcanzable - PIN está desactivado temporalmente');
+    } catch (e, stackTrace) {
+      print('❌ AUTH_BLOC: Error validando licencia: $e');
+      print('❌ AUTH_BLOC: Stack trace: $stackTrace');
+      emit(AuthError('Error validando licencia: $e'));
+    }
+  }
+
+  // Maneja login por PIN
+  Future<void> _onEmployeePinLoginRequested(EmployeePinLoginRequested event, Emitter<AuthState> emit) async {
+    print('🔢 AUTH_BLOC: Procesando login por PIN: ${event.pin}');
+    emit(AuthLoading());
+    
+    try {
+      final auditService = getIt<AuditEventService>();
+      final repo = getIt<EmployeeRepository>();
+      print('🔢 AUTH_BLOC: Validando PIN con EmployeeRepository...');
+      
+      final employee = await repo.validatePin(event.pin);
+      
+      if (employee == null) {
+        print('❌ AUTH_BLOC: PIN inválido o múltiples coincidencias');
+        unawaited(
+          auditService.recordWarning(
+            category: 'auth-pin',
+            message: 'PIN inválido o ambiguo',
+            metadata: {
+              'pin': event.pin,
+            },
+          ),
+        );
+        emit(AuthError('PIN inválido. Verifica tu código de empleado.'));
+        return;
+      }
+      
+      print('✅ AUTH_BLOC: Empleado encontrado:');
+      print('   - ID: ${employee.id}');
+      print('   - Nombre: ${employee.name}');
+      print('   - User ID: ${employee.userId}');
+      print('   - User Name: ${employee.userName}');
+      print('   - Email: ${employee.workEmail}');
+      print('   - Puesto: ${employee.jobTitle}');
+      
+      // Guardar información del empleado en cache
+      final kv = getIt<CustomOdooKv>();
+      kv.put('employeeId', employee.id);
+      kv.put('employeeName', employee.name);
+      
+      if (employee.userId != null) {
+        // Caso ideal: empleado tiene usuario de Odoo vinculado
+        kv.put('userId', employee.userId.toString());
+        print('💾 AUTH_BLOC: User ID del empleado guardado: ${employee.userId}');
+        unawaited(
+          auditService.recordInfo(
+            category: 'auth-pin',
+            message: 'PIN validado con usuario asociado',
+            metadata: {
+              'employeeId': employee.id,
+              'userId': employee.userId,
+              'employeeName': employee.name,
+            },
+          ),
+        );
+      } else {
+        // Caso no ideal: empleado sin usuario de Odoo
+        print('⚠️ ═══════════════════════════════════════════════════════════');
+        print('⚠️ ADVERTENCIA: Empleado "${employee.name}" sin usuario Odoo');
+        print('⚠️ ═══════════════════════════════════════════════════════════');
+        print('⚠️ Employee ID: ${employee.id} (tabla hr.employee)');
+        print('⚠️ User ID en Odoo: NO EXISTE (user_id = false)');
+        print('⚠️ ');
+        print('⚠️ CONSECUENCIA:');
+        print('⚠️ - Las órdenes mostrarán "ADMINISTRATOR" como responsable');
+        print('⚠️ - Se pierde trazabilidad del vendedor real');
+        print('⚠️ ');
+        print('⚠️ SOLUCIÓN en Odoo:');
+        print('⚠️ 1. Ir a: Empleados > ${employee.name}');
+        print('⚠️ 2. Campo "Usuario relacionado" > Crear usuario');
+        print('⚠️ 3. Asignar permisos de "Ventas / Usuario"');
+        print('⚠️ ═══════════════════════════════════════════════════════════');
+        try {
+          final session = getIt<OdooSession>();
+          final fallbackUserId = session.userId.toString();
+          kv.put('userId', fallbackUserId);
+          print('⚠️ AUTH_BLOC: Fallback a userId de sesión: $fallbackUserId');
+          unawaited(
+            auditService.recordWarning(
+              category: 'auth-pin',
+              message: 'Empleado sin user_id, se aplica fallback',
+              metadata: {
+                'employeeId': employee.id,
+                'employeeName': employee.name,
+                'fallbackUserId': fallbackUserId,
+              },
+            ),
+          );
+        } catch (e) {
+          print('⚠️ AUTH_BLOC: No se pudo obtener userId de sesión para fallback: $e');
+          unawaited(
+            auditService.recordError(
+              category: 'auth-pin',
+              message: 'Fallback a user_id falló (sin sesión)',
+              metadata: {
+                'employeeId': employee.id,
+                'error': e.toString(),
+              },
+            ),
+          );
+        }
+      }
+      
+      if (employee.workEmail != null) kv.put('employeeEmail', employee.workEmail);
+      if (employee.jobTitle != null) kv.put('employeeJobTitle', employee.jobTitle);
+      print('💾 AUTH_BLOC: Información de empleado guardada en cache');
+      
+      // Asegurarse de que OdooSession esté registrado en GetIt
+      print('🔧 AUTH_BLOC: Verificando OdooSession en GetIt...');
+      if (!getIt.isRegistered<OdooSession>()) {
+        print('⚠️ AUTH_BLOC: OdooSession no registrado, re-inicializando desde cache...');
+        final sessionJson = kv.get(AppConstants.cacheSessionKey) as String?;
+        if (sessionJson != null) {
+          final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
+          final session = OdooSession.fromJson(sessionData);
+          await initAuthScope(session);
+          print('✅ AUTH_BLOC: OdooSession re-registrado exitosamente');
+        } else {
+          print('❌ AUTH_BLOC: No se encontró sesión en cache');
+          emit(AuthError('Error: Sesión de Odoo no disponible. Por favor, reinicie la aplicación.'));
+          return;
+        }
+      } else {
+        print('✅ AUTH_BLOC: OdooSession ya está registrado');
+      }
+      
+      // Emitir estado autenticado con el empleado
+      print('✅ AUTH_BLOC: Emitiendo AuthAuthenticated');
+      unawaited(
+        auditService.recordInfo(
+          category: 'auth-pin',
+          message: 'PIN aceptado, sesión autenticada',
+          metadata: {
+            'employeeId': employee.id,
+            'employeeName': employee.name,
+            'userId': kv.get('userId'),
+          },
+        ),
+      );
+      final effectiveUserId = employee.userId?.toString() ?? employee.id.toString();
+      print('✅ AUTH_BLOC: userId efectivo para AuthState: $effectiveUserId');
+      
+      emit(AuthAuthenticated(
+        username: employee.name,
+        userId: kv.get('userId'),
+        database: kv.get('database') ?? '',
+      ));
+    } catch (e) {
+      print('❌ AUTH_BLOC: Error login por PIN: $e');
+      unawaited(
+        getIt<AuditEventService>().recordError(
+          category: 'auth-pin',
+          message: 'Excepción validando PIN',
+          metadata: {
+            'error': e.toString(),
+            'pin': event.pin,
+          },
+        ),
+      );
+      emit(AuthError('Error al validar PIN: $e'));
+    }
+  }
+
+  /// Maneja el evento cuando el usuario hace clic en "Continuar" en la pantalla de recuperación
+  /// 
+  /// Este handler emite AuthLicenseValidated para continuar el flujo normal de autenticación
+  /// después de que el usuario haya visto y guardado sus credenciales de recuperación.
+  Future<void> _onRecoveryKeyAcknowledged(
+    RecoveryKeyAcknowledged event,
+    Emitter<AuthState> emit,
+  ) async {
+    print('🔑 AUTH_BLOC: Usuario confirmó haber guardado credenciales de recuperación');
+    
+    // Reconstruir LicenseInfo desde los datos del evento
+    // Necesitamos llamar a _continueAfterUUIDValidation para hacer el login completo
+    print('🔑 AUTH_BLOC: Reconstruyendo LicenseInfo para continuar flujo de autenticación');
+    
+    // Crear LicenseInfo con los datos guardados en el evento
+    final info = LicenseInfo(
+      success: true, // Ya fue validado
+      isActive: true, // Ya fue validado
+      licenseNumber: event.licenseNumber,
+      serverUrl: event.serverUrl,
+      database: event.database,
+      username: event.username,
+      password: event.password,
+      tipoven: event.tipoven,
+      tarifaId: event.tarifaId,
+      empresaId: event.empresaId,
+      imei: null, // Ya se registró el UUID
+    );
+    
+    // Continuar con el flujo completo (login, inicialización de repositorios, etc.)
+    print('🔑 AUTH_BLOC: Llamando a _continueAfterUUIDValidation para completar autenticación');
+    await _continueAfterUUIDValidation(info, emit);
+  }
+
+  /// Maneja el evento cuando la key de recuperación fue validada exitosamente
+  Future<void> _onKeyValidationSucceeded(
+    KeyValidationSucceeded event,
+    Emitter<AuthState> emit,
+  ) async {
+    print('🔑 AUTH_BLOC: Key de recuperación validada exitosamente');
+    print('🔑 AUTH_BLOC: UUID guardado en cache: ${event.uuid}');
+    
+    final auditService = getIt<AuditEventService>();
+    await auditService.recordInfo(
+      category: 'auth',
+      message: 'Key de recuperación validada exitosamente',
+      metadata: {
+        'license': event.licenseNumber,
+        'uuid': event.uuid,
+      },
+    );
+    
+    // Continuar con el flujo normal - obtener información de la licencia y continuar
+    try {
+      final service = LicenseService();
+      final info = await service.fetchLicense(event.licenseNumber);
+      
+      if (!info.success || !info.isActive) {
+        emit(AuthError('Licencia no activa o inválida'));
+        return;
+      }
+      
+      // El UUID ya está validado y guardado en cache
+      // Continuar con el flujo desde donde se guarda la configuración y hace login
+      await _continueAfterUUIDValidation(info, emit);
+    } catch (e) {
+      print('❌ AUTH_BLOC: Error obteniendo información de licencia después de validar key: $e');
+      emit(AuthError('Error al continuar después de validar key. Por favor, intente nuevamente.'));
+    }
+  }
+
+  /// Método helper para continuar el flujo después de validar el UUID
+  /// 
+  /// Este método se llama tanto desde el flujo normal (cuando UUID coincide)
+  /// como desde el handler de validación de key exitosa.
+  Future<void> _continueAfterUUIDValidation(
+    LicenseInfo info,
+    Emitter<AuthState> emit,
+  ) async {
+    print('🔑 AUTH_BLOC: ═══════════════════════════════════════════════');
+    print('🔑 AUTH_BLOC: Validación/Registro de UUID completado');
+    print('🔑 AUTH_BLOC: ═══════════════════════════════════════════════');
       
       // Persistir configuración en KV
       print('💾 AUTH_BLOC: Guardando configuración en cache...');
@@ -699,192 +1057,28 @@ class EmployeePinLoginRequested extends AuthEvent {
           print('🔴 AUTH_BLOC: ✅ AuthError EMITIDO (desde catch), retornando...');
           return;
         }
-      }
-
-      // 🚧 TEMPORAL: Este código nunca se alcanza porque siempre hacemos return arriba
-      // CÓDIGO ORIGINAL (comentado - validación de PIN desactivada):
-      /*
-      // Si llegamos aquí y tipoven es "E", emitir AuthLicenseValidated para pedir PIN
-      print('🔐 AUTH_BLOC: Tipo de venta "${info.tipoven}" - Se requiere PIN de empleado');
-      print('✅ AUTH_BLOC: Emitiendo AuthLicenseValidated');
-      emit(AuthLicenseValidated(
-        licenseNumber: info.licenseNumber,
-        serverUrl: info.serverUrl,
-        database: info.database,
-        tipoven: info.tipoven,
-      ));
-      */
-      
-      // 🚧 TEMPORAL: Como el PIN está desactivado, esto no debería ejecutarse
-      print('⚠️ AUTH_BLOC: Código inalcanzable - PIN está desactivado temporalmente');
-    } catch (e, stackTrace) {
-      print('❌ AUTH_BLOC: Error validando licencia: $e');
-      print('❌ AUTH_BLOC: Stack trace: $stackTrace');
-      emit(AuthError('Error validando licencia: $e'));
     }
   }
 
-  // Maneja login por PIN
-  Future<void> _onEmployeePinLoginRequested(EmployeePinLoginRequested event, Emitter<AuthState> emit) async {
-    print('🔢 AUTH_BLOC: Procesando login por PIN: ${event.pin}');
-    emit(AuthLoading());
+  /// Maneja el evento cuando la key de recuperación falló la validación
+  Future<void> _onKeyValidationFailed(
+    KeyValidationFailed event,
+    Emitter<AuthState> emit,
+  ) async {
+    print('❌ AUTH_BLOC: Key de recuperación inválida');
     
-    try {
       final auditService = getIt<AuditEventService>();
-      final repo = getIt<EmployeeRepository>();
-      print('🔢 AUTH_BLOC: Validando PIN con EmployeeRepository...');
-      
-      final employee = await repo.validatePin(event.pin);
-      
-      if (employee == null) {
-        print('❌ AUTH_BLOC: PIN inválido o múltiples coincidencias');
-        unawaited(
-          auditService.recordWarning(
-            category: 'auth-pin',
-            message: 'PIN inválido o ambiguo',
+    await auditService.recordError(
+      category: 'auth',
+      message: 'Key de recuperación inválida',
             metadata: {
-              'pin': event.pin,
-            },
-          ),
-        );
-        emit(AuthError('PIN inválido. Verifica tu código de empleado.'));
-        return;
-      }
-      
-      print('✅ AUTH_BLOC: Empleado encontrado:');
-      print('   - ID: ${employee.id}');
-      print('   - Nombre: ${employee.name}');
-      print('   - User ID: ${employee.userId}');
-      print('   - User Name: ${employee.userName}');
-      print('   - Email: ${employee.workEmail}');
-      print('   - Puesto: ${employee.jobTitle}');
-      
-      // Guardar información del empleado en cache
-      final kv = getIt<CustomOdooKv>();
-      kv.put('employeeId', employee.id);
-      kv.put('employeeName', employee.name);
-      
-      if (employee.userId != null) {
-        // Caso ideal: empleado tiene usuario de Odoo vinculado
-        kv.put('userId', employee.userId.toString());
-        print('💾 AUTH_BLOC: User ID del empleado guardado: ${employee.userId}');
-        unawaited(
-          auditService.recordInfo(
-            category: 'auth-pin',
-            message: 'PIN validado con usuario asociado',
-            metadata: {
-              'employeeId': employee.id,
-              'userId': employee.userId,
-              'employeeName': employee.name,
-            },
-          ),
-        );
-      } else {
-        // Caso no ideal: empleado sin usuario de Odoo
-        print('⚠️ ═══════════════════════════════════════════════════════════');
-        print('⚠️ ADVERTENCIA: Empleado "${employee.name}" sin usuario Odoo');
-        print('⚠️ ═══════════════════════════════════════════════════════════');
-        print('⚠️ Employee ID: ${employee.id} (tabla hr.employee)');
-        print('⚠️ User ID en Odoo: NO EXISTE (user_id = false)');
-        print('⚠️ ');
-        print('⚠️ CONSECUENCIA:');
-        print('⚠️ - Las órdenes mostrarán "ADMINISTRATOR" como responsable');
-        print('⚠️ - Se pierde trazabilidad del vendedor real');
-        print('⚠️ ');
-        print('⚠️ SOLUCIÓN en Odoo:');
-        print('⚠️ 1. Ir a: Empleados > ${employee.name}');
-        print('⚠️ 2. Campo "Usuario relacionado" > Crear usuario');
-        print('⚠️ 3. Asignar permisos de "Ventas / Usuario"');
-        print('⚠️ ═══════════════════════════════════════════════════════════');
-        try {
-          final session = getIt<OdooSession>();
-          final fallbackUserId = session.userId.toString();
-          kv.put('userId', fallbackUserId);
-          print('⚠️ AUTH_BLOC: Fallback a userId de sesión: $fallbackUserId');
-          unawaited(
-            auditService.recordWarning(
-              category: 'auth-pin',
-              message: 'Empleado sin user_id, se aplica fallback',
-              metadata: {
-                'employeeId': employee.id,
-                'employeeName': employee.name,
-                'fallbackUserId': fallbackUserId,
-              },
-            ),
-          );
-        } catch (e) {
-          print('⚠️ AUTH_BLOC: No se pudo obtener userId de sesión para fallback: $e');
-          unawaited(
-            auditService.recordError(
-              category: 'auth-pin',
-              message: 'Fallback a user_id falló (sin sesión)',
-              metadata: {
-                'employeeId': employee.id,
-                'error': e.toString(),
-              },
-            ),
-          );
-        }
-      }
-      
-      if (employee.workEmail != null) kv.put('employeeEmail', employee.workEmail);
-      if (employee.jobTitle != null) kv.put('employeeJobTitle', employee.jobTitle);
-      print('💾 AUTH_BLOC: Información de empleado guardada en cache');
-      
-      // Asegurarse de que OdooSession esté registrado en GetIt
-      print('🔧 AUTH_BLOC: Verificando OdooSession en GetIt...');
-      if (!getIt.isRegistered<OdooSession>()) {
-        print('⚠️ AUTH_BLOC: OdooSession no registrado, re-inicializando desde cache...');
-        final sessionJson = kv.get(AppConstants.cacheSessionKey) as String?;
-        if (sessionJson != null) {
-          final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
-          final session = OdooSession.fromJson(sessionData);
-          await initAuthScope(session);
-          print('✅ AUTH_BLOC: OdooSession re-registrado exitosamente');
-        } else {
-          print('❌ AUTH_BLOC: No se encontró sesión en cache');
-          emit(AuthError('Error: Sesión de Odoo no disponible. Por favor, reinicie la aplicación.'));
-          return;
-        }
-      } else {
-        print('✅ AUTH_BLOC: OdooSession ya está registrado');
-      }
-      
-      // Emitir estado autenticado con el empleado
-      print('✅ AUTH_BLOC: Emitiendo AuthAuthenticated');
-      unawaited(
-        auditService.recordInfo(
-          category: 'auth-pin',
-          message: 'PIN aceptado, sesión autenticada',
-          metadata: {
-            'employeeId': employee.id,
-            'employeeName': employee.name,
-            'userId': kv.get('userId'),
-          },
-        ),
-      );
-      final effectiveUserId = employee.userId?.toString() ?? employee.id.toString();
-      print('✅ AUTH_BLOC: userId efectivo para AuthState: $effectiveUserId');
-      
-      emit(AuthAuthenticated(
-        username: employee.name,
-        userId: kv.get('userId'),
-        database: kv.get('database') ?? '',
-      ));
-    } catch (e) {
-      print('❌ AUTH_BLOC: Error login por PIN: $e');
-      unawaited(
-        getIt<AuditEventService>().recordError(
-          category: 'auth-pin',
-          message: 'Excepción validando PIN',
-          metadata: {
-            'error': e.toString(),
-            'pin': event.pin,
-          },
-        ),
-      );
-      emit(AuthError('Error al validar PIN: $e'));
-    }
+        'license': event.licenseNumber,
+        'enteredKey': event.enteredKey,
+      },
+    );
+    
+    // El error ya fue mostrado en la pantalla, no necesitamos emitir otro estado
+    // Solo registramos el evento de auditoría
   }
 
 

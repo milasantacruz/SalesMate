@@ -30,6 +30,8 @@ import 'presentation/pages/splash_page.dart';
 import 'presentation/pages/license_page.dart';
 import 'presentation/pages/pin_login_page.dart';
 import 'presentation/pages/diagnostics_page.dart';
+import 'presentation/pages/device_recovery_key_screen.dart';
+import 'presentation/pages/device_key_validation_screen.dart';
 import "presentation/theme.dart";
 import 'presentation/bloc/bootstrap/bootstrap_bloc.dart';
 import 'presentation/bloc/bootstrap/bootstrap_event.dart';
@@ -110,6 +112,16 @@ class MyApp extends StatelessWidget {
               '/home': (context) => const HomePage(),
               '/login': (context) => const LoginPage(),
               '/diagnostics': (context) => const DiagnosticsPage(),
+              '/device-recovery-key': (context) {
+                final state = BlocProvider.of<AuthBloc>(context).state;
+                if (state is AuthRecoveryKeyRequired) {
+                  return DeviceRecoveryKeyScreen(
+                    uuid: state.uuid,
+                    licenseNumber: state.licenseNumber,
+                  );
+                }
+                return const LicenseValidationPage();
+              },
             },
           ),
         );
@@ -338,6 +350,18 @@ class AuthWrapper extends StatelessWidget {
                   },
                 ),
               ),
+            );
+          } else if (state is AuthRecoveryKeyRequired) {
+            // Mostrar pantalla de recuperación de credenciales
+            return DeviceRecoveryKeyScreen(
+              uuid: state.uuid,
+              licenseNumber: state.licenseNumber,
+            );
+          } else if (state is AuthKeyValidationRequired) {
+            // Mostrar pantalla de validación de key
+            return DeviceKeyValidationScreen(
+              licenseNumber: state.licenseNumber,
+              expectedUUID: state.expectedUUID,
             );
           } else if (state is AuthLicenseValidated) {
             // Después de validar licencia, ir a PIN login

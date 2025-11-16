@@ -33,6 +33,7 @@ import '../http/odoo_client_mobile.dart'; // ← Importar CookieClient
 import '../http/scoped_odoo_client.dart';
 import '../audit/audit_event_service.dart';
 import '../device/device_info_service.dart';
+import '../device/device_recovery_service.dart';
 
 /// Contenedor de inyección de dependencias
 final GetIt getIt = GetIt.instance;
@@ -48,6 +49,12 @@ Future<void> init() async {
   getIt.registerLazySingleton<DeviceInfoService>(
     () => DeviceInfoService(),
   );
+
+  // Device Recovery Service
+  final deviceRecoveryService = DeviceRecoveryService();
+  getIt.registerSingleton<DeviceRecoveryService>(deviceRecoveryService);
+  // Inicializar después del registro
+  await deviceRecoveryService.init();
 
   // Odoo dependencies - usando implementación personalizada
   final customCache = CustomOdooKv();

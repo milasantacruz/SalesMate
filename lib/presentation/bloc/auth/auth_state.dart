@@ -60,3 +60,57 @@ class AuthLicenseValidated extends AuthState {
   @override
   List<Object> get props => [licenseNumber, serverUrl ?? '', database ?? '', tipoven ?? ''];
 }
+
+/// Estado cuando se requiere mostrar la pantalla de recuperación de key
+/// Ocurre después de registrar exitosamente un UUID en una licencia nueva
+class AuthRecoveryKeyRequired extends AuthState {
+  final String uuid;
+  final String licenseNumber;
+  final String? serverUrl;
+  final String? database;
+  final String? tipoven;
+  final String? username;
+  final String? password;
+  final int? tarifaId;
+  final int? empresaId;
+
+  const AuthRecoveryKeyRequired({
+    required this.uuid,
+    required this.licenseNumber,
+    this.serverUrl,
+    this.database,
+    this.tipoven,
+    this.username,
+    this.password,
+    this.tarifaId,
+    this.empresaId,
+  });
+
+  @override
+  List<Object> get props => [
+    uuid,
+    licenseNumber,
+    serverUrl ?? '',
+    database ?? '',
+    tipoven ?? '',
+    username ?? '',
+    password ?? '',
+    tarifaId ?? 0,
+    empresaId ?? 0,
+  ];
+}
+
+/// Estado cuando se requiere validar la key de recuperación
+/// Ocurre cuando license.imei != null pero no hay UUID en cache o no coincide
+class AuthKeyValidationRequired extends AuthState {
+  final String licenseNumber;
+  final String expectedUUID; // UUID esperado de la licencia
+
+  const AuthKeyValidationRequired({
+    required this.licenseNumber,
+    required this.expectedUUID,
+  });
+
+  @override
+  List<Object> get props => [licenseNumber, expectedUUID];
+}

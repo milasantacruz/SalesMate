@@ -19,18 +19,34 @@ class DeviceInfoService {
       }
 
       final androidInfo = await _deviceInfo.androidInfo;
-      final deviceId = androidInfo.id;
-      
-      print('📱 DEVICE_INFO: Android ID obtenido: $deviceId');
-      print('📱 DEVICE_INFO: Modelo: ${androidInfo.model}');
-      print('📱 DEVICE_INFO: SDK: ${androidInfo.version.sdkInt}');
-      
-      if (deviceId.isEmpty) {
-        print('⚠️ DEVICE_INFO: Android ID está vacío');
-        return null;
+
+      // Intentar obtener Android ID desde el mapa de datos interno (campo 'androidId')
+      // Nota: device_info_plus expone campos adicionales a través de 'data'
+      final Map<String, dynamic> raw = androidInfo.data;
+      String? androidId = (raw['androidId'] as String?)?.trim();
+
+      // Validar valor problemático conocido en APIs antiguas
+      const badLegacyId = '9774d56d682e549c';
+      if (androidId != null && androidId.isNotEmpty && androidId != badLegacyId) {
+        print('📱 DEVICE_INFO: Android ID (Settings.Secure.ANDROID_ID) obtenido: $androidId');
+        return androidId;
       }
-      
-      return deviceId;
+
+      // Fallback: usar androidInfo.id (Build.ID) SOLO para logging/compatibilidad (no es único por dispositivo)
+      final buildId = androidInfo.id;
+      if (androidId == null || androidId.isEmpty) {
+        print('⚠️ DEVICE_INFO: androidId no disponible en data o inválido (=$androidId)');
+      } else if (androidId == badLegacyId) {
+        print('⚠️ DEVICE_INFO: Detectado ANDROID_ID legacy ($badLegacyId) - no es confiable');
+      }
+
+      if (buildId.isNotEmpty && buildId.toLowerCase() != 'unknown') {
+        print('⚠️ DEVICE_INFO: Fallback a Build.ID (NO único por dispositivo): $buildId');
+        return buildId;
+      }
+
+      print('⚠️ DEVICE_INFO: No se pudo obtener un identificador confiable');
+      return null;
     } catch (e, stackTrace) {
       print('❌ DEVICE_INFO: Error obteniendo identificador de dispositivo: $e');
       print('❌ DEVICE_INFO: Stack trace: $stackTrace');
@@ -46,8 +62,12 @@ class DeviceInfoService {
       }
 
       final androidInfo = await _deviceInfo.androidInfo;
+      final Map<String, dynamic> raw = androidInfo.data;
+      final androidId = (raw['androidId'] as String?)?.trim();
+
       return {
         'id': androidInfo.id,
+        'androidId': androidId,
         'model': androidInfo.model,
         'manufacturer': androidInfo.manufacturer,
         'brand': androidInfo.brand,

@@ -53,6 +53,18 @@ dependencies:
   # Device Info
   device_info_plus: ^10.1.0
   
+  # UUID Generation
+  uuid: ^4.0.0
+  
+  # QR Code
+  qr_flutter: ^4.1.0
+  
+  # Share/Copy
+  share_plus: ^7.2.1
+  
+  # QR Scanner
+  mobile_scanner: ^5.0.0
+  
   # Equatable para comparaciones
   equatable: ^2.0.5
   flex_color_scheme: ^8.2.0
