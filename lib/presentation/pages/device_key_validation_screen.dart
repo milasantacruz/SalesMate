@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import '../bloc/auth/auth_bloc.dart';
 import '../bloc/auth/auth_event.dart';
 import '../bloc/auth/auth_state.dart';
@@ -12,7 +11,7 @@ import '../../../core/device/device_recovery_service.dart';
 /// 
 /// Esta pantalla se muestra cuando `license.imei != null` pero no hay UUID en cache
 /// o el UUID en cache no coincide con el de la licencia. El usuario debe ingresar
-/// o escanear la key de recuperación para validar su identidad.
+/// la key de recuperación para validar su identidad.
 class DeviceKeyValidationScreen extends StatefulWidget {
   final String licenseNumber;
   final String expectedUUID;
@@ -32,8 +31,6 @@ class _DeviceKeyValidationScreenState extends State<DeviceKeyValidationScreen> {
   final _formKey = GlobalKey<FormState>();
   String? _errorMessage;
   bool _isLoading = false;
-  bool _isScanning = false;
-  MobileScannerController? _scannerController;
 
   @override
   void initState() {
@@ -50,7 +47,6 @@ class _DeviceKeyValidationScreenState extends State<DeviceKeyValidationScreen> {
   @override
   void dispose() {
     _keyController.dispose();
-    _scannerController?.dispose();
     super.dispose();
   }
 
@@ -71,10 +67,6 @@ class _DeviceKeyValidationScreenState extends State<DeviceKeyValidationScreen> {
             setState(() {
               _isLoading = false;
               _errorMessage = state.message;
-            });
-            _scannerController?.stop();
-            setState(() {
-              _isScanning = false;
             });
           }
         },
@@ -169,7 +161,7 @@ class _DeviceKeyValidationScreenState extends State<DeviceKeyValidationScreen> {
                       borderSide: const BorderSide(color: Colors.red),
                     ),
                   ),
-                  enabled: !_isLoading && !_isScanning,
+                  enabled: !_isLoading,
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'Ingrese la key de recuperación';
@@ -221,23 +213,9 @@ class _DeviceKeyValidationScreenState extends State<DeviceKeyValidationScreen> {
                   const SizedBox(height: 24),
                 ],
                 
-                // Botón Escanear QR
-                OutlinedButton.icon(
-                  onPressed: _isLoading || _isScanning ? null : _startQRScanner,
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: const Text('Escanear QR'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
                 // Botón Validar
                 ElevatedButton(
-                  onPressed: (_isLoading || _isScanning) ? null : _validateKey,
+                  onPressed: _isLoading ? null : _validateKey,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -265,7 +243,7 @@ class _DeviceKeyValidationScreenState extends State<DeviceKeyValidationScreen> {
                 
                 // Botón Cancelar
                 TextButton(
-                  onPressed: _isLoading || _isScanning
+                  onPressed: _isLoading
                       ? null
                       : () {
                           // Volver a la pantalla de licencia
@@ -273,108 +251,12 @@ class _DeviceKeyValidationScreenState extends State<DeviceKeyValidationScreen> {
                         },
                   child: const Text('Cancelar'),
                 ),
-                
-                // Vista de escáner QR
-                if (_isScanning) ...[
-                  const SizedBox(height: 32),
-                  _buildQRScannerView(),
-                ],
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  Widget _buildQRScannerView() {
-    return Container(
-      height: 300,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          children: [
-            MobileScanner(
-              controller: _scannerController,
-              onDetect: (capture) {
-                final List<Barcode> barcodes = capture.barcodes;
-                if (barcodes.isNotEmpty) {
-                  final barcode = barcodes.first;
-                  if (barcode.rawValue != null) {
-                    _onQRCodeScanned(barcode.rawValue!);
-                  }
-                }
-              },
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: _stopQRScanner,
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black54,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _startQRScanner() {
-    setState(() {
-      _isScanning = true;
-      _scannerController = MobileScannerController();
-    });
-  }
-
-  void _stopQRScanner() {
-    _scannerController?.stop();
-    _scannerController?.dispose();
-    setState(() {
-      _isScanning = false;
-      _scannerController = null;
-    });
-  }
-
-  void _onQRCodeScanned(String scannedValue) {
-    _stopQRScanner();
-    
-    try {
-      // Validar que el valor no esté vacío
-      if (scannedValue.trim().isEmpty) {
-        setState(() {
-          _errorMessage = 'El código QR está vacío o corrupto. Intente escanear nuevamente.';
-        });
-        return;
-      }
-      
-      // Normalizar el valor escaneado
-      final deviceRecoveryService = getIt<DeviceRecoveryService>();
-      final normalizedValue = deviceRecoveryService.normalizeUUID(scannedValue);
-      
-      // Validar formato
-      if (!deviceRecoveryService.isValidUUID(normalizedValue)) {
-        setState(() {
-          _errorMessage = 'El código QR no contiene un UUID válido. Verifique que sea el QR correcto.';
-        });
-        return;
-      }
-      
-      // Establecer el valor en el input y validar
-      _keyController.text = normalizedValue;
-      _validateKey();
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error al procesar el código QR: ${e.toString()}';
-      });
-    }
   }
 
   void _validateKey() {

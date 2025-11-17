@@ -188,13 +188,30 @@ class EmployeePinLoginRequested extends AuthEvent {
       final deviceRecoveryService = getIt<DeviceRecoveryService>();
         final auditService = getIt<AuditEventService>();
       
-      // Si la licencia no tiene IMEI (license.imei == null), generar UUID y validar historial
+      // Si la licencia no tiene IMEI (license.imei == null), obtener/generar UUID y validar historial
       if (info.imei == null || info.imei!.isEmpty) {
-        print('🔑 AUTH_BLOC: Licencia sin UUID - Generando nuevo UUID...');
+        print('🔑 AUTH_BLOC: Licencia sin UUID - Verificando cache local...');
         
-        // Generar nuevo UUID (ignorando cache si existe)
-        final newUUID = deviceRecoveryService.generateUUID();
-        print('🔑 AUTH_BLOC: UUID generado: $newUUID');
+        // Verificar primero si existe UUID en cache local
+        String newUUID;
+        final storedUUID = deviceRecoveryService.getStoredUUID();
+        
+        if (storedUUID != null && deviceRecoveryService.isValidUUID(storedUUID)) {
+          // Reutilizar UUID del cache si existe y es válido
+          print('✅ AUTH_BLOC: UUID encontrado en cache: $storedUUID');
+          print('🔑 AUTH_BLOC: Reutilizando UUID existente para validar/registrar en backend');
+          newUUID = storedUUID;
+        } else {
+          // Generar nuevo UUID solo si no existe en cache o es inválido
+          if (storedUUID != null) {
+            print('⚠️ AUTH_BLOC: UUID en cache es inválido: $storedUUID');
+          } else {
+            print('🔑 AUTH_BLOC: No hay UUID en cache');
+          }
+          print('🔑 AUTH_BLOC: Generando nuevo UUID...');
+          newUUID = deviceRecoveryService.generateUUID();
+          print('🔑 AUTH_BLOC: UUID generado: $newUUID');
+        }
         
         // Consultar historial de la licencia
         print('📜 AUTH_BLOC: Consultando historial de la licencia...');

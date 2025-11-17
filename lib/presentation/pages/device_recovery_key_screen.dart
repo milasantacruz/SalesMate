@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../bloc/auth/auth_bloc.dart';
 import '../bloc/auth/auth_event.dart';
 import '../bloc/auth/auth_state.dart';
 
-/// Pantalla para mostrar las credenciales de recuperación (UUID y QR)
+/// Pantalla para mostrar las credenciales de recuperación (UUID)
 /// 
 /// Esta pantalla se muestra después de registrar exitosamente un UUID
 /// en una licencia nueva. El usuario debe guardar esta información
@@ -97,10 +96,6 @@ class DeviceRecoveryKeyScreen extends StatelessWidget {
             _buildUUIDSection(context),
             const SizedBox(height: 32),
             
-            // QR Code
-            _buildQRCodeSection(context),
-            const SizedBox(height: 32),
-            
             // Botón Continuar
             ElevatedButton(
               onPressed: () => _onContinue(context),
@@ -169,85 +164,37 @@ class DeviceRecoveryKeyScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             
-            // Botón Copiar
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _copyUUID(context),
-                icon: const Icon(Icons.copy),
-                label: const Text('Copiar Código'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQRCodeSection(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+            // Botones de acción
             Row(
               children: [
-                Icon(Icons.qr_code, color: Theme.of(context).primaryColor),
-                const SizedBox(width: 8),
-                Text(
-                  'Código QR',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _copyUUID(context),
+                    icon: const Icon(Icons.copy),
+                    label: const Text('Copiar'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _shareKey(context),
+                    icon: const Icon(Icons.share),
+                    label: const Text('Compartir'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 16),
-            
-            // QR Code
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: QrImageView(
-                  data: uuid,
-                  version: QrVersions.auto,
-                  size: 200,
-                  backgroundColor: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            
-            // Botón Descargar/Compartir
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _shareQR(context),
-                icon: const Icon(Icons.share),
-                label: const Text('Compartir QR'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
             ),
           ],
         ),
@@ -272,10 +219,8 @@ class DeviceRecoveryKeyScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _shareQR(BuildContext context) async {
+  Future<void> _shareKey(BuildContext context) async {
     try {
-      // Para compartir el QR, compartimos el UUID en formato texto
-      // El usuario puede guardar el UUID y escanearlo después como QR
       await Share.share(
         'Código de recuperación para licencia $licenseNumber:\n\n$uuid\n\nGuarde este código de forma segura para recuperar el acceso.',
         subject: 'Credenciales de Recuperación - Licencia $licenseNumber',
