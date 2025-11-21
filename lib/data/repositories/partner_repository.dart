@@ -4,6 +4,7 @@ import 'offline_odoo_repository.dart';
 import '../../core/network/network_connectivity.dart';
 import 'odoo_call_queue_repository.dart';
 import '../../core/di/injection_container.dart';
+import '../../core/cache/custom_odoo_kv.dart';
 
 /// Repository para manejar operaciones con Partners en Odoo con soporte offline
 class PartnerRepository extends OfflineOdooRepository<Partner> {
@@ -30,6 +31,26 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
   @override
   Partner fromJson(Map<String, dynamic> json) => Partner.fromJson(json);
 
+  /// Obtiene el userId del usuario logueado desde el cache
+  int? _getUserIdFromCache() {
+    try {
+      final customCache = getIt<CustomOdooKv>();
+      final userIdStr = customCache.get('userId') as String?;
+      if (userIdStr != null) {
+        final userId = int.tryParse(userIdStr);
+        if (userId != null && userId > 0) {
+          print('👤 PARTNER_REPO: userId obtenido del cache: $userId');
+          return userId;
+        }
+      }
+      print('⚠️ PARTNER_REPO: No se encontró userId válido en cache');
+      return null;
+    } catch (e) {
+      print('⚠️ PARTNER_REPO: Error obteniendo userId del cache: $e');
+      return null;
+    }
+  }
+
   @override
   Future<List<dynamic>> searchRead() async {
     print('📋 PARTNER_REPO: Buscando partners con domain: $oDomain');
@@ -37,7 +58,16 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
     
     try {
       final domain = List<dynamic>.from(oDomain);
-      // No filtramos por user_id porque res.partner suele tener user_id=false.
+      
+      // ✅ REACTIVADO: Filtrar por user_id del usuario logueado
+      final userId = _getUserIdFromCache();
+      if (userId != null) {
+        domain.add(['user_id', '=', userId]);
+        print('👤 PARTNER_REPO: Filtro por user_id agregado: $userId');
+      } else {
+        print('⚠️ PARTNER_REPO: No se pudo obtener userId, mostrando todos los partners');
+      }
+      
       final response = await env.orpc.callKw({
         'model': modelName,
         'method': 'search_read',
@@ -53,7 +83,7 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
       
       print('✅ PARTNER_REPO: callKw completado exitosamente');
       final records = response as List<dynamic>;
-      print('📋 PARTNER_REPO: ${records.length} contactos activos encontrados');
+      print('📋 PARTNER_REPO: ${records.length} contactos activos encontrados${userId != null ? " (filtrado por user_id: $userId)" : ""}');
       
       return records;
     } catch (e, stackTrace) {
@@ -73,7 +103,15 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
       ['type', '=', 'contact'],
       ['write_date', '>', since],
     ];
-    // No filtramos por user_id porque res.partner suele tener user_id=false.
+    
+    // ✅ REACTIVADO: Filtrar por user_id del usuario logueado
+    final userId = _getUserIdFromCache();
+    if (userId != null) {
+      domain.add(['user_id', '=', userId]);
+      print('👤 PARTNER_REPO: Filtro por user_id agregado (incremental): $userId');
+    } else {
+      print('⚠️ PARTNER_REPO: No se pudo obtener userId, obteniendo todos los partners incrementales');
+    }
 
     final response = await env.orpc.callKw({
       'model': modelName,
@@ -90,7 +128,7 @@ class PartnerRepository extends OfflineOdooRepository<Partner> {
     });
     
     final records = response as List<dynamic>;
-    print('🔄 PARTNER_REPO: ${records.length} registros incrementales obtenidos');
+    print('🔄 PARTNER_REPO: ${records.length} registros incrementales obtenidos${userId != null ? " (filtrado por user_id: $userId)" : ""}');
     
     // Convertir cada record a Map<String, dynamic> para evitar errores de tipo
     return records.map((record) => Map<String, dynamic>.from(record)).toList();
