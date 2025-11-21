@@ -93,3 +93,15 @@ class KeyValidationFailed extends AuthEvent {
   @override
   List<Object> get props => [licenseNumber, enteredKey];
 }
+
+/// Evento cuando el usuario cancela la validación de key
+class KeyValidationCancelled extends AuthEvent {
+  final String licenseNumber;
+
+  const KeyValidationCancelled({
+    required this.licenseNumber,
+  });
+
+  @override
+  List<Object> get props => [licenseNumber];
+}

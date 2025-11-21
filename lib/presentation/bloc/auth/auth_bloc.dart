@@ -31,6 +31,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<RecoveryKeyAcknowledged>(_onRecoveryKeyAcknowledged);
     on<KeyValidationSucceeded>(_onKeyValidationSucceeded);
     on<KeyValidationFailed>(_onKeyValidationFailed);
+    on<KeyValidationCancelled>(_onKeyValidationCancelled);
     
     // Escuchar eventos de sesión expirada
     _sessionExpiredSubscription = SessionExpiredHandler.sessionExpiredStream.listen((_) {
@@ -79,6 +80,49 @@ class EmployeePinLoginRequested extends AuthEvent {
           final sessionData = json.decode(sessionJson) as Map<String, dynamic>;
           final session = OdooSession.fromJson(sessionData);
           await initAuthScope(session);
+        }
+        
+        // ✅ NUEVO: Verificar si requiere PIN y si fue validado
+        final tipoven = cache.get('tipoven') as String?;
+        print('🔍 CHECK_AUTH: tipoven = $tipoven');
+        
+        if (tipoven?.toUpperCase() == 'U') {
+          // Licencia requiere PIN, verificar si fue validado
+          final employeeId = cache.get('employeeId');
+          print('🔍 CHECK_AUTH: employeeId en cache = $employeeId');
+          
+          if (employeeId == null) {
+            // PIN nunca fue validado, redirigir a pantalla de PIN
+            print('⚠️ CHECK_AUTH: Sesión Odoo válida pero PIN no validado');
+            print('⚠️ CHECK_AUTH: Redirigiendo a pantalla de PIN...');
+            
+            final auditService = getIt<AuditEventService>();
+            unawaited(
+              auditService.recordWarning(
+                category: 'auth',
+                message: 'Intento de acceso sin PIN validado',
+                metadata: {
+                  'tipoven': tipoven,
+                  'hasSession': true,
+                  'hasEmployeeId': false,
+                },
+              ),
+            );
+            
+            final licenseNumber = cache.get('licenseNumber') as String?;
+            final serverUrl = cache.get('serverUrl') as String?;
+            
+            emit(AuthLicenseValidated(
+              licenseNumber: licenseNumber ?? 'unknown',
+              serverUrl: serverUrl,
+              database: database,
+              tipoven: tipoven,
+            ));
+            return;
+          }
+          
+          // PIN fue validado, continuar normalmente
+          print('✅ CHECK_AUTH: PIN previamente validado (employeeId: $employeeId)');
         }
         
         print('✅ Sesión válida encontrada para: $username');
@@ -451,37 +495,74 @@ class EmployeePinLoginRequested extends AuthEvent {
     try {
       final auditService = getIt<AuditEventService>();
       final repo = getIt<EmployeeRepository>();
+      final kv = getIt<CustomOdooKv>();
+      
+      // Obtener licenseNumber desde cache
+      final licenseNumber = kv.get('licenseNumber') as String?;
+      print('🔢 AUTH_BLOC: Licencia activa: ${licenseNumber ?? "sin licencia"}');
       print('🔢 AUTH_BLOC: Validando PIN con EmployeeRepository...');
       
-      final employee = await repo.validatePin(event.pin);
+      // Validar PIN con filtro de licencia
+      final employee = await repo.validatePin(event.pin, licenseNumber: licenseNumber);
       
       if (employee == null) {
-        print('❌ AUTH_BLOC: PIN inválido o múltiples coincidencias');
+        print('❌ AUTH_BLOC: PIN inválido o empleado no autorizado para esta licencia');
+        
+        // Mensaje de error específico según si hay licencia o no
+        final errorMsg = licenseNumber != null
+            ? 'No autorizado para la licencia $licenseNumber.'
+            : 'PIN inválido. Verifica tu código de empleado.';
+        
         unawaited(
           auditService.recordWarning(
             category: 'auth-pin',
-            message: 'PIN inválido o ambiguo',
+            message: 'PIN inválido o no autorizado para licencia',
             metadata: {
               'pin': event.pin,
+              'license': licenseNumber,
             },
           ),
         );
-        emit(AuthError('PIN inválido. Verifica tu código de empleado.'));
+        emit(AuthError(errorMsg));
         return;
       }
       
-      print('✅ AUTH_BLOC: Empleado encontrado:');
+      // Validar que el barcode del empleado coincida con la licencia activa
+      if (licenseNumber != null && employee.barcode != licenseNumber) {
+        print('❌ AUTH_BLOC: Empleado encontrado pero barcode no coincide');
+        print('❌ AUTH_BLOC: Esperado: $licenseNumber, Obtenido: ${employee.barcode}');
+        
+        unawaited(
+          auditService.recordError(
+            category: 'auth-pin',
+            message: 'Empleado no autorizado para esta licencia (barcode no coincide)',
+            metadata: {
+              'employeeId': employee.id,
+              'employeeName': employee.name,
+              'employeeBarcode': employee.barcode,
+              'licenseNumber': licenseNumber,
+            },
+          ),
+        );
+        
+        emit(AuthError('No autorizado para la licencia $licenseNumber.'));
+        return;
+      }
+      
+      print('✅ AUTH_BLOC: Empleado encontrado y autorizado:');
       print('   - ID: ${employee.id}');
       print('   - Nombre: ${employee.name}');
+      print('   - Barcode: ${employee.barcode}');
+      print('   - Licencia activa: $licenseNumber');
       print('   - User ID: ${employee.userId}');
       print('   - User Name: ${employee.userName}');
       print('   - Email: ${employee.workEmail}');
       print('   - Puesto: ${employee.jobTitle}');
       
-      // Guardar información del empleado en cache
-      final kv = getIt<CustomOdooKv>();
+      // Guardar información del empleado en cache (kv ya está declarado arriba)
       kv.put('employeeId', employee.id);
       kv.put('employeeName', employee.name);
+      kv.put('username', employee.name); // ✅ Actualizar username para que _onCheckAuthStatus lo use
       
       if (employee.userId != null) {
         // Caso ideal: empleado tiene usuario de Odoo vinculado
@@ -1096,6 +1177,27 @@ class EmployeePinLoginRequested extends AuthEvent {
     
     // El error ya fue mostrado en la pantalla, no necesitamos emitir otro estado
     // Solo registramos el evento de auditoría
+  }
+
+  /// Maneja el evento cuando el usuario cancela la validación de key
+  Future<void> _onKeyValidationCancelled(
+    KeyValidationCancelled event,
+    Emitter<AuthState> emit,
+  ) async {
+    print('🚫 AUTH_BLOC: Usuario canceló validación de key para ${event.licenseNumber}');
+    
+    final auditService = getIt<AuditEventService>();
+    await auditService.recordInfo(
+      category: 'auth',
+      message: 'Usuario canceló validación de key',
+          metadata: {
+        'license': event.licenseNumber,
+      },
+    );
+    
+    // Volver al estado no autenticado para que muestre pantalla de licencia
+    print('🚫 AUTH_BLOC: Emitiendo AuthUnauthenticated para volver a pantalla de licencia');
+    emit(AuthUnauthenticated());
   }
 
 

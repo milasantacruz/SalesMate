@@ -246,8 +246,14 @@ class _DeviceKeyValidationScreenState extends State<DeviceKeyValidationScreen> {
                   onPressed: _isLoading
                       ? null
                       : () {
-                          // Volver a la pantalla de licencia
-                          Navigator.of(context).pushReplacementNamed('/license');
+                          // Emitir evento al BLoC para cancelar validación
+                          // El BLoC emitirá AuthUnauthenticated y el BlocBuilder
+                          // en main.dart mostrará automáticamente la pantalla de licencia
+                          context.read<AuthBloc>().add(
+                            KeyValidationCancelled(
+                              licenseNumber: widget.licenseNumber,
+                            ),
+                          );
                         },
                   child: const Text('Cancelar'),
                 ),

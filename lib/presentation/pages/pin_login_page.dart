@@ -63,12 +63,12 @@ class _PinLoginPageState extends State<PinLoginPage> {
             });
           }
         },
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const SizedBox(height: 24),
               // Icono principal
               Icon(
                 Icons.pin,
@@ -184,6 +184,7 @@ class _PinLoginPageState extends State<PinLoginPage> {
                   ),
                 ),
               ),
+              const SizedBox(height: 24), // Espacio adicional al final para scroll
             ],
           ),
         ),

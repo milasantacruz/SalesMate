@@ -51,22 +51,34 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
     return latestRecords;
   }
 
-  /// Busca empleado(s) por PIN
-  Future<List<Employee>> findByPin(String pin) async {
+  /// Busca empleado(s) por PIN y opcionalmente por barcode (licenseNumber)
+  Future<List<Employee>> findByPin(String pin, {String? licenseNumber}) async {
     try {
+      // Construir dominio dinámico
+      final domain = <dynamic>[
+        ['pin', '=', pin]
+      ];
+      
+      // Agregar filtro de barcode si se proporciona licenseNumber
+      if (licenseNumber != null && licenseNumber.isNotEmpty) {
+        domain.add(['barcode', '=', licenseNumber]);
+        print('🔍 EMPLOYEE_REPO: Buscando con PIN=$pin y barcode=$licenseNumber');
+      } else {
+        print('🔍 EMPLOYEE_REPO: Buscando solo con PIN=$pin (sin filtro de barcode)');
+      }
+      
       final results = await env.orpc.callKw({
         'model': modelName,
         'method': 'search_read',
         'args': [],
         'kwargs': {
-          'domain': [
-            ['pin', '=', pin]
-          ],
+          'domain': domain,
           'fields': oFields,
           'limit': 5,
         },
       });
       final list = (results as List).map((e) => fromJson(e)).toList();
+      print('✅ EMPLOYEE_REPO: Encontrados ${list.length} empleados');
       return list;
     } catch (e) {
       print('❌ EMPLOYEE_REPO: Error findByPin: $e');
@@ -75,11 +87,14 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
   }
 
   /// Valida el PIN de empleado y retorna el empleado si es único
-  Future<Employee?> validatePin(String pin) async {
+  /// Si se proporciona [licenseNumber], solo retorna empleados con ese barcode
+  Future<Employee?> validatePin(String pin, {String? licenseNumber}) async {
     try {
-      final matches = await findByPin(pin);
+      final matches = await findByPin(pin, licenseNumber: licenseNumber);
       if (matches.length == 1) {
-        return matches.first;
+        final employee = matches.first;
+        print('✅ EMPLOYEE_REPO: PIN validado - Empleado: ${employee.name} (barcode: ${employee.barcode})');
+        return employee;
       }
       if (matches.length > 1) {
         print('⚠️ EMPLOYEE_REPO: PIN $pin devolvió múltiples coincidencias en servidor (${matches.length})');
@@ -98,9 +113,14 @@ class EmployeeRepository extends OfflineOdooRepository<Employee> {
       print('⚠️ EMPLOYEE_REPO: Error cargando registros para fallback offline: $e');
     }
 
-    final offlineMatches = latestRecords.where((employee) => employee.pin == pin).toList();
+    final offlineMatches = latestRecords.where((employee) {
+      final pinMatch = employee.pin == pin;
+      final barcodeMatch = licenseNumber == null || employee.barcode == licenseNumber;
+      return pinMatch && barcodeMatch;
+    }).toList();
+    
     if (offlineMatches.length == 1) {
-      print('✅ EMPLOYEE_REPO: PIN $pin validado usando cache offline');
+      print('✅ EMPLOYEE_REPO: PIN $pin validado usando cache offline (licencia: $licenseNumber)');
       return offlineMatches.first;
     }
     if (offlineMatches.length > 1) {

@@ -344,6 +344,18 @@ Future<void> logout() async {
     await cache.delete('userId');
     await cache.delete('database');
     
+    // ✅ NUEVO: Limpiar datos de empleado y licencia (BUG-004 fix)
+    await cache.delete('employeeId');
+    await cache.delete('employeeName');
+    await cache.delete('employeeEmail');
+    await cache.delete('employeeJobTitle');
+    await cache.delete('tipoven');
+    await cache.delete('licenseNumber');
+    await cache.delete('serverUrl');
+    await cache.delete('licenseUser');
+    await cache.delete('licensePassword');
+    print('🧹 Datos de empleado y licencia limpiados');
+    
     // Verificar que se limpió correctamente
     print('🔍 Verificando caché después de limpiar:');
     final sessionAfter = cache.get(AppConstants.cacheSessionKey);

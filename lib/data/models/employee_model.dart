@@ -18,6 +18,7 @@ class Employee extends Equatable implements OdooRecord {
     this.managerName,
     this.active = true,
     this.employeeType,
+    this.barcode,
   });
 
   @override
@@ -35,6 +36,7 @@ class Employee extends Equatable implements OdooRecord {
   final String? managerName;
   final bool active;
   final String? employeeType;
+  final String? barcode;
 
   /// Crea un Employee desde JSON
   factory Employee.fromJson(Map<String, dynamic> json) {
@@ -72,6 +74,7 @@ class Employee extends Equatable implements OdooRecord {
       active: json['active'] as bool? ?? true,
       employeeType:
           json['employee_type'] is String ? json['employee_type'] : null,
+      barcode: json['barcode'] is String ? json['barcode'] : null,
     );
   }
 
@@ -108,6 +111,7 @@ class Employee extends Equatable implements OdooRecord {
         managerName,
         active,
         employeeType,
+        barcode,
       ];
 
   /// Campos que se solicitan a Odoo
@@ -123,6 +127,7 @@ class Employee extends Equatable implements OdooRecord {
         'parent_id',
         'active',
         'employee_type',
+        'barcode',
       ];
 
   /// Representación como string
